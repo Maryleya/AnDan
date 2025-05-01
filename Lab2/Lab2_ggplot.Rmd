@@ -1,0 +1,841 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data visualization: Introduction
+
+Gggplot2 (сейчас в версии 3.5) -- популярный пакет R для визуализаций в анализе данных <https://cran.r-project.org/web/packages/ggplot2/index.html>
+
+Расширения ggplot2: <https://exts.ggplot2.tidyverse.org/gallery/>
+
+Gggplot2 разработан командой Х. Уикхема на основе новой грамматики послойной графики.
+
+-   Леланд Уилкинсон. Grammar of Graphics
+-   Хэдли Уикхэм. A Layered grammar of graphics и пакет `ggplot2`
+
+Каждый график обычно состоит из нескольких **слоев** (layers), которые располагаются один над другим. У каждого слоя есть три обязательных элемента: **данные** (data), **геом** (geom), **эстетики** (aes(tetics))\
+и два вспомогательных: **статистические трансформации** (stat) и **регулировка положения** (position adjustment).
+
+-   **Данные (data).** Собственно, сами данные в виде датафрейма, используемые в данном слое.
+
+-   **Геом (geom).** Геом --- это сокращение от "геометрический объект". Собственно, в какой геометрический объект (графический примитив) мы собираемся превращать данные. Например, в точки, прямоугольники или линии.
+
+-   **Отображение (aestetic mappings).** Эстетические отображения или просто **эстетики (aestetics)** --- это набор правил, как различные переменные превращаются в визуальные особенности геометрии. Без эстетик остается непонятно, какие именно колонки в используемом датафрейме превращаются в различные особенности геомов: позицию, размер, цвет и т.д. У каждого геома (визуального слоя) свой набор эстетик, но многие из них совпадают у разных геомов (например, *x*, *y*, *colour*, *fill*, *size*) и могут быть заданы в `ggplot()`. Без некоторых эстетик геом не будет работать. Например, геометрия в виде точек не будет работать без двух координат этих точек (*x* и *y*). Другие эстетики необязательны и имеют значения по умолчанию. Например, по умолчанию точки будут черными, но можно сделать их цвет зависимым от выбранной колонки в датафрейме с помощью эстетики *colour*.
+
+![](images/ggplot2_scheme.png)
+
+-   **Статистические трансформации (stat).** Название используемой статистической трансформации (или просто --- статистики). Обычно те же статистические трансформации можно сделать вне `ggplot2` в рамках препроцессинга данных, но с `ggplot2` бывает удобнее. Формально, статистические трансформации --- это обязательный элемент геома, но если вы не хотите преобразовывать данные, то можете выбрать "identity" преобразование, которое оставляет все как есть. В `ggplot2` у каждого геома есть статистика по умолчанию, а у каждой статистики - свой геом по умолчанию. И не всегда статистика по умолчанию --- это "identity" статистика. Например, для барплота (`geom_barplot()`) используется статистика "count", которая считает частоты, которые затем трансформируются в высоту барплотов.
+
+-   **Регулировка положения (position adjustment).** Регулировка положения --- это небольшое улучшение позиции геометрий для части элементов. Например, можно добавить немного случайного шума ("jitter") в позицию точек, чтобы они не перекрывали друг друга. Или "раздвинуть" ("dodge") два барплота, чтобы один не загораживал другой. Как и в случае со статистическими трансформациями, в большинстве случаев значение по умолчанию --- "identity".
+
+Кроме слоев, у графика есть:
+
+-   **Координатная система (coord)** -- нужна для интерпретации координат. Обычно используется *декартова система координат (Cartesian coordinate system)*, т.е. стандартная прямоугольная система координат, но можно использовать и другие, например, полярную систему координат или картографическую проекцию.
+
+-   **Шкалы (scales).** Шкалы задают то, *как именно* значения превращаются в эстетики. Например, если мы задали, что разные значения в колонке будут влиять на цвет точки, то какая именно палитра будет использоваться? В какие конкретно цвета будут превращаться числовые, логические или строковые значения в колонке? В `ggplot2` есть правила по умолчанию для всех эстестик, и они отличные, но самостоятельная настройка шкал может значительно улучшить график.
+
+-   **Фасеты (facets).** Фасеты (фасетки) --- это одно из нововведений Уикхэма в грамматику графики. Фасетки повзоляют разбить график на множество похожих, задав переменную, по которой график будет разделен. Это очень напоминает использование группировки с помощью `group_by()`.
+
+-   **Тема (theme).** Тема --- это зрительное оформление "подложки" графика, не относящейся к содержанию графика: размер шрифта, цвет фона, размер и цвет линий на фоне и т.д. и т.п. В `ggplot2` есть несколько встроенных тем, а также есть множество пакетов, которые добавляют дополнительные темы. Кроме того, их можно настраивать самостоятельно!
+
+-   **Значения по умолчанию (defaults).** Если в графике используется несколько слоев, то часто все они используют одни и те же данные и эстетики. Можно задать данные и эстетики по умолчанию для всего графика, чтобы не повторять код.
+
+## Пример: пайчарт с распределение по полу
+
+```{r}
+library(tidyverse)
+heroes <- read_csv("https://raw.githubusercontent.com/Pozdniakov/tidy_stats/master/data/heroes_information.csv",
+                   na = c("-", "-99"))
+str(heroes)
+```
+
+Запустим функцию `ggplot()`, задав наш тиббл `heroes` в качестве данных.
+
+```{r}
+ggplot(data = heroes)
+```
+
+Мы ничего не получили! Это естественно, ведь мы задали только данные по умолчанию, но не задали геометрию и эстетики.
+
+Функция `ggplot()` не просто отрисовывает график, эта функция создает объект класса `ggplot`, который можно сохранить и модифицировать в дальнейшем:
+
+```{r}
+almost_empty_ggplot <- ggplot(data = heroes)
+almost_empty_ggplot
+```
+
+Возьмем `geom_bar()` для отрисовки барплота. В качестве эстетик поставим `x = Gender` и `fill = Gender`. Поскольку это эстетики, они обозначаются внутри функции параметра `mapping = aes()` или просто внутри функции `aes()`. По умолчанию, `geom_bar()` имеет статистику "count", что нас полностью устраивает: `geom_bar()` сам посчитает табличку частот и использует значения `Gender` для обозначения позиций и заливки, а посчитанные частоты будет использовать для задания высоты столбцов.
+
+```{r}
+ggplot(data = heroes) +
+  geom_bar(aes(x = Gender, fill = Gender))
+```
+
+Сейчас мы сделаем один хитрый трюк: поставим значение эстетики `x = ""`, чтобы собрать все столбики в один.
+
+```{r}
+ggplot(data = heroes) +
+  geom_bar(aes(x = "", fill = Gender))
+```
+
+Получилось что-то не очень симпатичное, но вполне осмысленное: доли столбца обозначают относительную частоту.
+
+Можно настроить общие параметры геома, не зависящие от данных. Это нужно делать *вне* функции `aes()`, но внутри функции для геома.
+
+```{r}
+ggplot(data = heroes) +
+  geom_bar(aes(x = "", fill = Gender), width = .2)
+```
+
+А теперь внимание! Подумайте, какого действия нам не хватает, чтобы из имеющегося графика получить пайчарт?
+
+```{r}
+ggplot(data = heroes) +
+  geom_bar(aes(x = "", fill = Gender)) +
+  coord_polar(theta = "y")
+# уберите theta = "y", чтобы понять, что она делает
+```
+
+Нам нужно было всего-лишь поменять систему координат с декартовой на полярную (круговую)! Иначе говоря, пайчарт - это барплот в полярной системе координат.
+
+Именно в этом основная сила грамматики графики и ее реализации в `ggplot2` --- вместо того, чтобы описывать и рисовать огромное количество типов графиков, можно описать практически любой график через небольшой количество элементарных элементов и правила их соединения.
+
+Получившийся пайчарт осталось подретушировать, убрав все лишние элементы подложки с помощью самой минималистичной темы `theme_void()` и добавив название графика:
+
+```{r}
+ggplot(data = heroes) +
+  geom_bar(aes(x = "", fill = Gender)) +
+  #coord_polar(theta = "y") +
+  theme_void() +
+  labs(title = "Gender distributions for superheroes")
+```
+
+    hapax <- load("/Users/olgaliashevskaia/Documents/Vyshka/DA-for-CL2023/data/HapaxPlato.rdata")
+    str(hapax)
+    ggplot(data=hapax, aes(x=hapax, y=words)) +
+       geom_point()
+
+## Пример №1: Education and IQ meta-analysis
+
+Для этого примера мы возьмем мета-анализ связи количества лет обучения и интеллекта: *"How Much Does Education Improve Intelligence? A Meta-Analysis"* [@eduiq]. Мета-анализ --- это группа статистических методов, которые позволяют объединить результаты нескольких исследований с похожим планом исследованием и тематикой, чтобы посчитать средний эффект между несколькими статьями сразу.
+
+Данные и скрипт для анализа данных в этой статье находятся в открытом доступе: <https://osf.io/r8a24/>
+
+Полный текст статьи доступен по [ссылке](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6088505/).
+
+Существует положительная корреляция между количеством лет, который человек потратил на обучение, и интеллектом. Это может объясняться по-разному: как то, что обучение повышает интеллект, и как то, что люди с высоким интеллекте стремятся получать больше образования. Напрямую в эксперименте это проверить нельзя, поэтому есть несколько квази-экспериментальных планов, которые косвенно указывают на верность той или иной гипотезу. Например, если в стране изменилось количество лет обязательного школьного образования, то повлияло ли это на интеллект целого поколения? ~~Или все-таки дело в Моргенштерне~~
+
+![](images/meta_2.png)
+
+Данная картинка показывает, насколько размер эффекта (выраженный в баллах IQ) зависит от того, какой средний возраст участвоваших в исследовании испытуемых.
+
+Каждая точка на этом графике --- это отдельное исследование, положение по оси *x* --- средний возраст респондентов, а положение по оси *y* - средний прирост интеллекта согласно исследованию. Размер точки отражает "точность" исследования (грубо говоря, чем больше выборка, тем больше точка). Два графика обозначают два квазиэкспериментальных плана.
+
+Мы сфокусируемся на нижней картинке с "Policy change" --- это как раз исследования, в которых изучается изменения интеллекта в возрастных группах после изменения количества лет обучения в школе.
+
+![](images/meta_analysis_ggplot2.png)
+
+Мы полностью воспроизведем код
+
+```{r}
+library(tidyverse)
+```
+
+Заметьте, данный датасет использует формат хранения данных tsv. Попытайтесь самостоятельно прочитать его.
+
+```{r}
+df <- read_tsv("https://raw.githubusercontent.com/Pozdniakov/tidy_stats/master/data/meta_dataset.txt")
+```
+
+Давайте посмотрим, как устроен датафрейм `df`:
+
+```{r}
+df
+```
+
+Каждая строчка --- это результат отдельного исследования, при этом одна статья может включать несколько исследований,
+
+В дальнейшем мы будем использовать код авторов статьи и смотреть, строчка за строчкой, как он будет работать.
+
+```{r}
+cpiq <- subset(df, subset=(Design=="Control Prior IQ"))
+poli <- subset(df, subset=(Design=="Policy Change"))
+```
+
+Авторы исследования используют `subset()`, это функция базового R, принцип которой очень похож на `filter()` [^1].
+
+[^1]: Кстати, именно функция `subset()` вдохновила Уикхема на создание `filter()`.
+
+Итак, начнем рисовать сам график. Сначала иницируем объект `ggplot` с данными `poli` по умолчанию.
+
+```{r}
+poli |> 
+  ggplot() 
+```
+
+Теперь добавим в качестве эстетик по умолчанию координаты: `aes(x=Outcome_age, y=Effect_size)`.
+
+```{r}
+cpiq <- subset(df, subset=(Design=="Control Prior IQ"))
+poli <- subset(df, subset=(Design=="Policy Change"))
+
+poli |>
+  ggplot(aes(x=Outcome_age, y=Effect_size)) 
+```
+
+Что изменилось? Появилась координатная ось и шкалы. Заметьте, масштаб неслучаен: он строится на основе разброса значений в выбранных колонках. Однако этого недостаточно для отрисовки графика, нехватает геометрии: нужно задать, в какую географическую сущность отобразятся данные.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size), data=poli) +
+		geom_point() 
+```
+
+Готово! Это и есть основа картинки. Добавляем размер:
+
+```{r}
+poli
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point() 
+```
+
+Перед нами возникла проблема оверплоттинга: некоторые точки перекрывают друг друга, поскольку имеют очень близкие координат. Авторы графика решают эту проблему очевидным способом: добавляют прозрачности точкам. Заметьте, прозрачность задается для всех точек одним значением, поэтому параметр `alpha` задается вне функции `aes()`.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(alpha=.55) 
+```
+
+Совершенно так же задается и цвет. Он задается одинаковым для всех точек с помощью [HEX-кода](https://ru.wikipedia.org/wiki/Цвета_HTML).
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(alpha=.55, colour="#BA1825")
+```
+
+Теперь добавим регрессионную прямую с доверительными интервалами на график. Это специальный геом `geom_smooth()` со специальной статистикой, который займет второй слой данного графика.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_smooth()
+```
+
+По умолчанию `geom_smooth()` строит кривую линию. Поставим `method = "lm"` для прямой.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_smooth(method="lm")
+```
+
+Теперь нужно поменять цвет: ярко синий цвет, используемый по умолчанию здесь попросту мешает восприятию графика.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(alpha=.5, colour="#BA1825") +
+		geom_smooth(method="lm", colour="#BA1825")
+```
+
+Авторы графика перекрашивают серую полупрозначную область тоже. В этом случае используется параметр `fill =`, а не `colour =`, но цвет используется тот же.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(colour="#BA1825", alpha=.55) +
+		geom_smooth(method="lm", colour="#BA1825", fill="#BA1825")
+```
+
+Регрессионную линию авторы немного утоньшают с помощью параметра `size =`.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_smooth(method="lm", colour="#BA1825",fill="#BA1825", size=.5)
+```
+
+Чтобы сместить фокус в сторону точек, авторы добавляют прозрачности для всего `geom_smooth()`.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_smooth(method="lm", colour="#BA1825",fill="#BA1825",size=.5, alpha=.25)
+```
+
+На шкале присутствует 0, и по умолчанию он никак не обозначен. Это легко исправить с помощью вспомогательного геома `geom_hline()`.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_hline(yintercept=0) + 
+		geom_smooth(method="lm", colour="#BA1825",fill="#BA1825",size=.5, alpha=.25)
+```
+
+Оттенить эту линию можно, сделав ее пунктирной.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_hline(yintercept=0, linetype="dotted") + 
+		geom_smooth(method="lm", colour="#BA1825",fill="#BA1825",size=.5, alpha=.25)
+```
+
+Авторы графика вручную задают деления шкалы по оси *x*.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_hline(yintercept=0, linetype="dotted") + 
+		scale_x_continuous(breaks=c(20,30,40,50,60,70,80)) +
+		geom_smooth(method="lm", colour="#BA1825",fill="#BA1825",size=.5, alpha=.25)
+```
+
+С помощью функции `guides()` убирают легенду с картинки.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_hline(yintercept=0, linetype="dotted") + 
+		scale_x_continuous(breaks=c(20,30,40,50,60,70,80)) +
+		guides(size=F) +
+		geom_smooth(method="lm", colour="#BA1825",fill="#BA1825",size=.5, alpha=.25)
+```
+
+Следующим этапом авторы добавляют подписи шкал и название картинки. Обратите внимание на `\n` внутри подписи к оси *y*, которая задает перенос на следующую строку.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_hline(yintercept=0, linetype="dotted") + 
+		scale_x_continuous(breaks=c(20,30,40,50,60,70,80)) +
+		xlab("Age at outcome test (years)") +
+		ylab("Gain for 1 year of education\n(IQ points)") +
+		guides(size=F) +
+		geom_smooth(method="lm", colour="#BA1825",fill="#BA1825",size=.5, alpha=.25) + 
+    ggtitle("Policy Change")
+```
+
+Теперь пришло время сделать график более красивым и понятным с помощью изменения подложки, т.е. работы с темой графика. Здесь тема задается сначала как `theme_bw()` --- встроенная в `ggplot2` минималистичная тема, а потом через функцию `theme()`, через которую можно управлять конкретными элементами темы. Здесь это сделано, чтобы передвинуть название графика к центру.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=poli) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_hline(yintercept=0, linetype="dotted") + 
+		theme_bw() + 
+		scale_x_continuous(breaks=c(20,30,40,50,60,70,80), limits = c(0, 90)) +
+		xlab("Age at outcome test (years)") +
+		ylab("Gain for 1 year of education\n(IQ points)") +
+		guides(size=F) +
+		geom_smooth(method="lm", colour="#BA1825",fill="#BA1825",size=.5, alpha=.25) + 
+    ggtitle("Policy Change") + 
+		theme(plot.title = element_text(hjust=0.5))
+```
+
+Готово! Мы полностью воспроизвели график авторов статьи с помощью их открытого кода.
+
+Если вы помните, то в изначальном графике было две картинки. Авторы делают их отдельно, с помощью почти идентичного кода. Нечто похожее можно сделать по-другому, применяя фасетки.
+
+Для этого мы возьмем неотфильтрованный датасет `df`, а с помощью колонки `Design`, на основании которой разделялся датасет для графиков, произведем разделение графиков внутри самого `ggplot` объекта. Для этого нам понадобится функция `facet_wrap()`, в которой с помощью формулы можно задать колонки, по которым будут разделены картинки по вертикали (слева от \~) и горизонтально (справа от \~). Пробуем разделить графики горизонтально:
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=df) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_hline(yintercept=0, linetype="dotted") + 
+		theme_bw() + 
+		scale_x_continuous(breaks=c(20,30,40,50,60,70,80)) +
+		xlab("Age at outcome test (years)") +
+		ylab("Gain for 1 year of education\n(IQ points)") +
+		guides(size=F) +
+		geom_smooth(method="lm", colour="#BA1825",fill="#BA1825",size=.5, alpha=.25) + ggtitle("Policy Change")+ 
+		theme(plot.title = element_text(hjust=0.5)) +
+    facet_wrap(~Design)
+```
+
+Здесь становится очевидно, почему авторы не включали данные `"School Age Cutoff"` третьим графиком: средний возраст участников этих исследований сильно отличается.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), 
+       data=df |> 
+         filter(Design != "School Age Cutoff")) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_hline(yintercept=0, linetype="dotted") + 
+		theme_bw() + 
+		scale_x_continuous(breaks=c(20,30,40,50,60,70,80)) +
+		xlab("Age at outcome test (years)") +
+		ylab("Gain for 1 year of education\n(IQ points)") +
+		guides(size=F) +
+		geom_smooth(method="lm", colour="#BA1825",fill="#BA1825",size=.5, alpha=.25) + ggtitle("Policy Change")+ 
+		theme(plot.title = element_text(hjust=0.5)) +
+    facet_wrap(~Design)
+```
+
+## facet_grid
+
+Теперь поставим два графика друг над другом, поместив `Design` слева от `~` внутри `facet_wrap()`. Справа нужно добавить точку.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=df |> filter(Design != "School Age Cutoff")) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_hline(yintercept=0, linetype="dotted") + 
+		theme_bw() + 
+		scale_x_continuous(breaks=c(20,30,40,50,60,70,80)) +
+		xlab("Age at outcome test (years)") +
+		ylab("Gain for 1 year of education\n(IQ points)") +
+		guides(size=F) +
+		geom_smooth(method="lm", colour="#BA1825",fill="#BA1825",size=.5, alpha=.25) + ggtitle("Policy Change")+ 
+		theme(plot.title = element_text(hjust=0.5)) +
+    facet_grid(Design~.)
+```
+
+Теперь нужно изменить подписи.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2)), data=df |> filter(Design != "School Age Cutoff")) +
+		geom_point(alpha=.55, colour="#BA1825") +
+		geom_hline(yintercept=0, linetype="dotted") + 
+		theme_bw() + 
+		scale_x_continuous(breaks=c(20,30,40,50,60,70,80)) +
+		xlab("Age at outcome test (years)") +
+		ylab("Gain for 1 year of education\n(IQ points)") +
+		guides(size=F) +
+		geom_smooth(method="lm", colour="#BA1825",fill="#BA1825",size=.5, alpha=.25) + 
+    ggtitle("Effect of education as a function of age at the outcome test")+ 
+		theme(plot.title = element_text(hjust=0.5)) +
+    facet_grid(Design~.)
+```
+
+Чтобы акцентировать графики, можно раскрасить их в разные цвета в дополнение к фасеткам. Для этого мы переносим `colour =` и `fill =` из параметров соответствующих геомов внутрь эстетик и делаем зависимыми от `Design`. Поскольку эти эстетики (точнее, `colour =`) одинаковы заданы для двух геомов (`geom_point()` и `geom_smooth()`), то мы спокойно можем вынести их в эстетики по умолчанию --- в параметры `aes()` внутри `ggplot()`.
+
+При этом сразу выключим легенды для новых эстетик, потому они избыточны.
+
+```{r}
+ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2), colour = Design, fill = Design), data=df |> filter(Design != "School Age Cutoff")) +
+		geom_point(alpha=.55) +
+		geom_hline(yintercept=0, linetype="dotted") + 
+		theme_bw() + 
+		scale_x_continuous(breaks=c(20,30,40,50,60,70,80)) +
+		xlab("Age at outcome test (years)") +
+		ylab("Gain for 1 year of education\n(IQ points)") +
+		guides(size=FALSE, colour = FALSE, fill = FALSE) +
+		geom_smooth(method="lm", size=.5, alpha=.25) + 
+    ggtitle("Effect of education as a function of age at the outcome test")+ 
+		theme(plot.title = element_text(hjust=0.5)) +
+    facet_grid(Design~.)
+```
+
+Слишком блеклая палитра? Не беда, можно задать палитру вручную! В `ggplot2` встроены легендарные *Brewer's Color Palettes*, которыми мы и воспользуемся.
+
+Функции для шкал устроены интересным образом: они состоят из трех слов, первое из которых `scale_*_*()`, второе --- эстетика, например, `scale_color_*()`, а последнее слово --- тип самой шкалы, в некоторых случаях - специальное название для используемой шкалы, как и в случае с `scale_color_brewer()`.
+
+```{r}
+meta_2_gg <- ggplot(aes(x=Outcome_age, y=Effect_size, size=1/(SE^2), colour = Design, fill = Design), data=df |> filter(Design != "School Age Cutoff")) +
+        geom_point(alpha=.55) +
+        geom_hline(yintercept=0, linetype="dotted") + 
+        theme_bw() + 
+        scale_x_continuous(breaks=c(20,30,40,50,60,70,80)) +
+        xlab("Age at outcome test (years)") +
+        ylab("Gain for 1 year of education\n(IQ points)") +
+        guides(size=FALSE, colour = FALSE, fill = FALSE) +
+        geom_smooth(method="lm", size=.5, alpha=.25) + 
+    ggtitle("Effect of education as a function of age at the outcome test")+ 
+        theme(plot.title = element_text(hjust=0.5)) +
+    facet_grid(Design~.)+
+    scale_colour_brewer(palette = "Set1")+
+    scale_fill_brewer(palette = "Set1")
+meta_2_gg
+```
+
+## Расширения `ggplot2`
+
+`ggplot2` стал очень популярным пакетом и быстро обзавелся расширениями - пакетами R, которые являются надстройками над `ggplot2`. Эти расширения бывают самого разного рода, например, добавляющие дополнительные геомы или просто реализующие отдельные типы графиков на языке `ggplot2`.
+
+Я рекомендую посмотреть самостоятельно галерею расширений `ggplot2`: <https://exts.ggplot2.tidyverse.org/gallery/>
+
+Для примера мы возьмем пакет `hrbrthemes`, который предоставляет дополнительные темы для `ggplot2`, компоненты тем и шкалы.
+
+```{r, eval = FALSE}
+#install.packages("hrbrthemes")
+```
+
+```{r}
+library(hrbrthemes)
+meta_2_gg +
+  theme_ipsum()
+```
+
+## Сохранение данных
+
+Функция `ggsave()` (аналог в базовом R - `save()`)
+
+```{r}
+plot <- ggplot(data=iris, aes(x=Sepal.Length, y=Sepal.Width)) + 
+  geom_point(aes(shape=Species, color=Species))
+
+
+# setwd("/Users/olgaliashevskaia/Desktop")
+
+ggsave("plot1.png")
+ggsave(plot, file="plot2.png")
+ggsave(plot, file="plot3.png", width=6, height=4)
+```
+
+## Excersizes
+
+## Пример №2: Vowel duration and intonation in Cantonese
+
+Датасет `homo`: исследование связи между акустическим сигналом и восприятием гендерной ориентации говорящих (кантонский диалект китайского языка). В экспериментах использовался перцептивный тест и сбор суждений относительно 14 говорящих.
+
+-   [s] duration (s.duration.ms)
+-   vowel duration (vowel.duration.ms)
+-   fundamental frequencies mean (F0) (average.f0.Hz)
+-   fundamental frequencies range (f0.range.Hz)
+-   percentage of homosexual impression (perceived.as.homo)
+-   percentage of heterosexal impression (perceived.as.hetero)
+-   speakers orientation (orientation)
+-   speakers age (age)
+
+```{r}
+homo <- read_csv("https://raw.githubusercontent.com/LingData2019/LingData2020/master/data/orientation.csv")
+head(homo)
+```
+
+### Scatterplot
+
+s.duration.ms vs. vowel.duration.ms
+
+```{r}
+homo |>
+   ggplot(aes(s.duration.ms, vowel.duration.ms)) +
+   geom_point()
+```
+
+### Scatterplot: color
+
+Добавьте цвет по столбцу color = orientation
+
+```{r}
+homo |>
+  ggplot(aes(s.duration.ms, vowel.duration.ms,
+             color = orientation)) +
+  geom_point()
+```
+
+### Scatterplot: shape
+
+Вместо цвета shape
+
+```{r}
+homo |>
+  ggplot(aes(s.duration.ms, vowel.duration.ms,
+             shape = orientation)) +
+  geom_point(color = "darkred")
+```
+
+### Scatterplot: size
+
+Используйте параметр size в эстетике, чтобы отобразить возраст:
+
+```{r}
+homo |>
+  ggplot(aes(s.duration.ms, vowel.duration.ms,
+             size = age)) +
+  geom_point()
+```
+
+Измените цвет точек и добавьте метки:
+
+### Scatterplot: текст
+
+```{r}
+homo |>
+  mutate(label = ifelse(orientation == "homo","⚣", "⚤")) |> 
+  ggplot(aes(s.duration.ms, vowel.duration.ms, label = label, fill = orientation)) +
+  geom_label()
+```
+
+Используйте цвет (color) вместо заполнения (fill):
+
+```{r}
+homo |>
+  mutate(label = ifelse(orientation == "homo","⚣", "⚤")) |> 
+  ggplot(aes(s.duration.ms, vowel.duration.ms, label = label, color = orientation)) +
+  geom_text()
+```
+
+### Title, subtitle, caption
+
+```{r}
+homo |>
+  ggplot(aes(s.duration.ms, vowel.duration.ms)) +
+  geom_point()+
+  labs(title = "Length of [s] vs. length of vowels",
+       subtitle = "based on 14 speakers of Cantonese",
+       caption = "data from [Hau 2007]")
+```
+
+### Axis labels
+
+```{r}
+homo |>
+  ggplot(aes(s.duration.ms, vowel.duration.ms)) +
+  geom_point()+
+  xlab("duration of [s] in ms")+
+  ylab("vowel duration in ms")
+```
+
+### Theme
+
+```{r}
+homo |>
+  ggplot(aes(s.duration.ms, vowel.duration.ms)) +
+  geom_point()+
+  xlab("duration of [s] in ms") +
+  ylab("vowel duration in ms") +
+  theme_minimal()
+```
+
+### (Log) scale
+
+```{r}
+freq <- read_csv("https://raw.githubusercontent.com/LingData2019/LingData/master/data/freqrnc2011_1000.csv")
+freq |>
+  ggplot(aes(rank, freq_ipm)) +
+  geom_point(alpha = .3) +
+  labs(x = "rank", y = "ipm") +
+  theme_minimal()
+```
+
+Use scale_y\_log10() to transform the y axis:
+
+```{r}
+freq |>
+  ggplot(aes(1:1000, freq_ipm)) +
+  geom_point(alpha = .3) +
+  geom_smooth(method=lm)+
+  xlab("rank") +
+  ylab("log(ipm)") +
+  scale_y_log10() +
+  scale_x_log10() +
+  theme_minimal()
+```
+
+### rugs
+
+```{r}
+homo |>
+  ggplot(aes(s.duration.ms, vowel.duration.ms, color = orientation)) +
+  geom_point() +
+  geom_rug() +
+  theme_minimal()
+```
+
+### lines
+
+```{r}
+homo |>
+  ggplot(aes(s.duration.ms, vowel.duration.ms)) +
+  geom_point() +
+  geom_hline(yintercept = mean(homo$vowel.duration.ms))+
+  geom_vline(xintercept = 60) +
+  theme_minimal()
+```
+
+Change line types and color:
+
+```{r}
+homo |>
+  ggplot(aes(s.duration.ms, vowel.duration.ms)) +
+  geom_point() +
+  geom_hline(yintercept = 120, linetype = 4) +
+  geom_vline(xintercept = 60, color = "blue") +
+  theme_minimal()
+```
+
+### Annotate!
+
+```{r}
+homo |>
+  ggplot(aes(s.duration.ms, vowel.duration.ms)) +
+  geom_point()+
+  annotate(geom = "rect", xmin = 77, xmax = 79,
+           ymin = 117, ymax = 122, fill = "red", alpha = 0.2) + 
+  annotate(geom = "text", x = 75, y = 125,
+           label = "Who is that?\n Outlier?") +
+  theme_minimal()
+```
+
+### Ablines
+
+```{r}
+homo |>
+  ggplot(aes(s.duration.ms, vowel.duration.ms)) +
+  geom_point() +
+  geom_hline(yintercept = 120, linetype = 4) +
+  geom_vline(xintercept = 60, color = "blue") +
+  geom_smooth(method = "lm") +
+  theme_minimal()
+```
+
+Try geom_smooth() without arguments now!
+
+### Facets
+
+`facet_wrap` -- cf. `group_by` in dplyr
+
+```{r}
+homo |>
+  ggplot(aes(s.duration.ms, vowel.duration.ms)) +
+  geom_point() +
+#  geom_hline(yintercept = 120, linetype = 4) +
+#  geom_vline(xintercept = 60, color = "blue") +
+#  geom_smooth(method = "lm") +
+  facet_wrap(orientation~.)
+  theme_minimal()
+```
+
+Another option: `facet_grid`
+
+```{r}
+homo |>
+  ggplot(aes(s.duration.ms, vowel.duration.ms, colour = orientation, fill = orientation)) +
+  geom_point() +
+#  geom_hline(yintercept = 120, linetype = 4) +
+#  geom_vline(xintercept = 60, color = "blue") +
+#  geom_smooth(method = "lm") +
+  facet_grid(orientation~.)
+  theme_minimal()
+```
+
+Note that `color` and `fill` depend on orientation and are put within the main `aes`
+
+## Categorical data
+
+### Barplots
+
+```{r}
+homo |>
+  ggplot(aes(orientation)) +
+  geom_bar()
+```
+
+Make barplots of `age` for each speaker:
+
+```{r}
+homo |>
+  ggplot(aes(speaker, age)) +
+  geom_col()
+```
+
+Fill bars by orientation:
+
+```{r}
+homo |>
+  ggplot(aes(speaker, age, fill = orientation)) +
+  geom_col()
+```
+
+### Aggregated data
+
+The count statistics is use by default here.
+
+```{r}
+homo |>
+  ggplot() +
+  geom_bar(aes(age, fill = orientation))
+```
+
+Plot all data in one bar:
+
+```{r}
+homo |>
+  ggplot() +
+  geom_bar(aes(x="", fill = orientation), width = 0.2)
+```
+
+```{r}
+homo |>
+  mutate(age = as.factor(age)) |>
+  ggplot() +
+  geom_bar(aes(x="", fill = age), width = 0.2)
+```
+
+NB the width argument of the barplot.
+
+### Piechart
+
+```{r}
+homo |>
+  mutate(age = as.factor(age)) |>
+  ggplot() +
+  geom_bar(aes(x="", fill = age)) +
+  coord_polar(theta = "y") +
+  theme_void()
+```
+
+### Boxplots
+
+```{r}
+theme_set(theme_bw()) # set black-and-white theme
+homo |>
+  ggplot(aes(orientation, s.duration.ms)) +
+  geom_boxplot()
+```
+
+### Boxplots: add points
+
+```{r}
+homo |>
+  ggplot(aes(orientation, s.duration.ms)) +
+  geom_boxplot()+
+  geom_point()
+```
+
+### Jitter
+
+```{r}
+homo |>
+  ggplot(aes(orientation, s.duration.ms)) +
+  geom_violin() +
+  geom_jitter(width = 0.1)
+```
+
+### Density plot
+
+```{r}
+homo |>
+  ggplot(aes(x=s.duration.ms, fill=orientation)) +
+  geom_density(alpha=0.7, position="stack")+
+#  geom_vline()+
+#  scale_color_manual(values=c("#999999", "#000000"))+
+#   scale_color_grey()+
+    theme_classic()
+```
+
+Другое решение
+
+```{r}
+homo |>
+  ggplot(aes(x=s.duration.ms, color=orientation)) +
+  geom_density() + 
+  geom_vline(xintercept = mean(homo$s.duration.ms[homo$orientation=="hetero"]))+
+  geom_vline(xintercept = mean(homo$s.duration.ms[homo$orientation=="homo"]))
+```
+
+### Save as file
+
+The plot can be stored as a variable. One can recycle it many times with different options. In order to create a pdf file, put the file name
+
+```{r}
+pdf("plot.pdf")
+homo |>
+  ggplot(aes(orientation, s.duration.ms)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2)
+dev.off()
+```
+
+## References:
+
+-   Jihui Lee. [Data Visualization with ggplot2](https://www.publichealth.columbia.edu/sites/default/files/media/fdawg_ggplot2.html)
+
+-   Raj Kamal Srivastav. [DV using R](https://rpubs.com/honeydwin/Data_visualization_using_R)
+
+-   Heather Harvey. [DV for correlation](https://rpubs.com/harveyh1/472257)

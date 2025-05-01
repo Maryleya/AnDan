@@ -1,0 +1,510 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE}
+library(tidyverse) 
+#install.packages("rstatix")
+library(rstatix) # for ANOVA
+library(ggpubr) # for boxplots with p-values
+library(car) # for Levene test
+library(ez) # for ezANOVA
+```
+
+## Разминка
+
+### Плохие практики в дизайне научного исследования
+
+<http://statcheck.io>
+
+-   Формулировка гипотезы ad-hoc
+
+-   Выбор зависимых переменных пост-фактум
+
+-   Обсуждение неожиданных результатов как ожидаемых, если результаты
+    оказываются статистически значимыми, но направлены в другую сторону,
+    чем предполагалось в гипотезе
+
+-   Остановка набора испытуемых/объема корпусного датасета при
+    достижении уровня значимости (Optional stopping) рано или поздно Вы
+    получите статистически значимые результаты. В любом случае, даже
+    если эффекта нет
+
+-   Неправильное округление до .05. Всякий раз, когда видите p = .05,
+    будьте внимательны
+
+-   Использование односторонних тестов для сравнения средних. Не
+    используйте правосторонний t-test !
+
+### Вспоминаем:
+
+-   Тестирование нулевой гипотезы и p-value
+-   t-test для средних значений в двух группах (непрерывная переменная)
+-   это о различиях между выборками
+
+### Нельзя много раз проводить t-test
+
+mean(A) \~ mean(B)\
+mean(A) \~ mean(C)\
+mean(B) \~ mean(C)
+
+
+## Дисперсионный анализ (ANOVA)
+
+В R функции: 
+* `aov()` -- базовый R (пакет stats), обертка над `lm()` для вывода данных в формате дисперсионного анализа    
+* `anova_test()` -- пакет `rstatix`  
+* `ezANOVA()` -- пакет `ez` (easy)  
+и др.
+
+### Межгрупповой анализ (One-way ANOVA)
+
+$H_0: mean(A) = mean(B) = mean(C) = mean(D) ...$ \$H_1: mean(A)
+\ne mean(B) \ne mean(C) \ne mean(D) \$
+$H_1: mean(A) = mean(B) \ne mean(C)$, \$ mean(A) \ne mean(D) \$
+
+```{r}
+diet <- read_csv("https://raw.githubusercontent.com/Pozdniakov/tidy_stats/master/data/stcp-Rdataset-Diet.csv")
+head(diet$Diet)
+diet <- diet %>%
+  mutate(weight.loss = weight6weeks - pre.weight,
+         Dietf = factor(Diet, labels = LETTERS[1:3]),
+         Person = factor(Person)) %>%
+  drop_na()
+diet %>% 
+  select(Dietf) %>%
+  distinct()
+
+# one-way anova 
+aov_model <- aov(weight.loss ~ Dietf, diet)
+aov_model
+summary(aov_model)
+
+# post-hoc 
+TukeyHSD(aov_model)
+```
+
+Post-hoc тест Тьюки показал, что есть статистически значимая разница
+между средними выборок B и С, A и C.
+
+### Дисперсионный анализ с повторными измерениями (Repeated-measures ANOVA)
+
+```{r rstatix functions for anova}
+dietlong <- diet %>%
+  pivot_longer(cols = c(pre.weight, weight6weeks),
+               names_to = "time",
+               values_to = "weight")
+
+dietlong <- diet %>%
+  pivot_longer(cols = c(pre.weight, weight6weeks),
+               names_to = "time",
+               values_to = "weight")
+
+res.aov <- anova_test(data = dietlong, dv = weight, wid = Person, within = time)
+get_anova_table(res.aov)
+```
+
+-   Мы применили однофакторный дисперсионный анализ с повторными
+    измерениями, который показал (F(1,75)=124.6949, p-value=3.72e-22),
+    что можно отвергнуть нулевую гипотезу о равенстве повторных
+    измерений, а значит, можно сделать вывод о существующем эффекте
+    диеты на повторные измерения.
+-   ges - величина эффекта, partial eta squared (5.8%)
+
+Пример использования функции ezANOVA:
+```{r ezANOVA function for anova}
+dietlongC <- dietlong %>%
+          filter(Dietf == "C") %>%
+          droplevels()
+
+ezANOVA(data = dietlongC,
+        dv = weight, 
+        wid = Person,
+        within = time)  
+
+ezANOVA(dietlongC, dv=weight, wid=Person, within=time, detailed = TRUE, type =
+3)
+```
+Детальная таблица выдает степени свободы для числителя (DFn(umerator)) и знаменателя (DFd(enominator)), то есть DFeffect и DFerror, соответствующие суммы квадратов (SSeffect и SSerror), F-статистику, p-value и величину эффекта (generalized eta-squared). 
+
+Напишите ваши выводы по результатам дисперсионного анализа с повторными измерениями по данным dietlongC:
+```
+
+```
+
+Примечание. Функция `ezANOVA()` полезна тем, что может выдавать Mauchly’s Test for Sphericity (для within-subjects факторов с более чем двумя уровнями), поправку на сферичность (Greenhouse-Geisser и Huynh-Feldt epsilon и adjusted p-values), Levene’s Test for Homogeneity (для дизайна без повторных измерений).  
+
+### Упражнение 1
+
+Датасет `bilingual` представляет псевдоисследование усвоения языка билингвами, которые используют один язык только дома, а другой - в школе.  
+* subj -- ID участника  
+* language -- сфера использования языка (`school`/`home.only`)  
+* age -- возраст участника  
+* gender -- пол участника  
+* mlu -- средняя длина высказывания (mean length of utterance)  
+
+Возьмите часть данных, описывающих использование домашнего языка (`home.only`). Примените однофакторный дисперсионный анализ с повторными измерениями, чтобы изучить эффект возраста на среднюю длину высказывания. Перед этим приведите описательные статистики и графики.
+
+```{r bilingual dataset one-way anova}
+bilingual <- read_tsv("http://coltekin.net/cagri/R/data/bilingual.txt") %>% 
+  mutate_if(is.character, factor) %>%
+  mutate(age = factor(age, levels = c("preschool","firstgrade","secondgrade")),
+         subj = factor(subj)) %>%
+  filter(language == "home.only") %>%
+  droplevels()
+str(bilingual)
+skimr::skim(bilingual)
+```
+
+```{r bilingual descriptive stats}
+bilingual %>%
+  group_by(age) %>%
+  rstatix::get_summary_stats(mlu, type = "mean_sd")
+
+ggpubr::ggboxplot(bilingual, x = "age", y = "mlu", add = "point")
+```
+
+```{r bilingual check anova assumptions}
+bilingual %>%
+  group_by(age) %>%
+  rstatix::identify_outliers(mlu)
+
+# normality test
+bilingual %>%
+  group_by(age) %>%
+  shapiro_test(mlu)
+
+ggpubr::ggqqplot(bilingual, "mlu", facet.by = "age")
+```
+
+```{r bilingual one-way anova}
+res.aov <- anova_test(data = bilingual, dv = mlu, wid = subj, within = age)
+get_anova_table(res.aov)
+# p-value < 0.5, so there is a significant difference found across age
+
+# the same with aov()
+#summary(aov(mlu ~ age + Error(subj/age), data=bilingual))
+```
+
+```{r bilingual one-way anova post-hoc}
+# post-hoc
+pwc <- bilingual %>%
+  pairwise_t_test(
+    mlu ~ age, paired = TRUE,
+    p.adjust.method = "bonferroni"
+    )
+pwc
+```
+
+```{r bilingual boxplot with post-hoc p-values}
+# boxplots with p-values
+pwc <- pwc %>% add_xy_position(x = "age")
+ggboxplot(bilingual, x = "age", y = "mlu", add = "point") + 
+  stat_pvalue_manual(pwc) +
+  labs(
+    subtitle = get_test_label(res.aov, detailed = TRUE),
+    caption = get_pwc_label(pwc)
+  )
+```
+Был проведен дисперсионный анализ с повторными измерениями по переменной age, который показал 
+(F(2,38)=5,682, p-value=0.007), что есть значимое различие в среднем показателе mlu при повторных измерениях в разных возрастах. Величина эффекта / Доля объясненной дисперсии 8,4%.
+Попарные post-hoc сравнения показали, что есть значимое различие между группами preschool и secondgrade (adjusted p-value=0.002).
+
+### Непараметрический тест Фридмана
+для повторных измерений, аналог one-way RM-ANOVA.
+Формула имеет вид `a ~ b | c`, где a (numeric) -- зависимая переменная;  
+b (factor) -- повторное измерение/условие (within-subjects variable);  
+c (factor) -- участник или стимул (individuals/subjects identifier). Должен быть уникальным для каждого измеряемого.
+
+```{r}
+res.fried <- bilingual %>% friedman_test(mlu ~ age|subj)
+res.fried
+
+# Effect size of the Friedman test
+# The Kendall’s W = Friedman_stats/N(k-1)
+bilingual %>% friedman_effsize(mlu ~ age |subj)
+
+# Pairwise comparisons using paired Wilcoxon signed-rank test
+pwc <- bilingual %>%
+  wilcox_test(mlu ~ age, paired = TRUE, p.adjust.method = "bonferroni")
+pwc
+
+# Pairwise comparisons using sign test:
+pwc2 <- bilingual %>%
+  sign_test(mlu ~ age, p.adjust.method = "bonferroni")
+pwc2
+
+# Visualization: box plots with p-values
+pwc <- pwc %>% add_xy_position(x = "age")
+ggboxplot(bilingual, x = "age", y = "mlu", add = "jitter") +
+  stat_pvalue_manual(pwc, hide.ns = TRUE) +
+  labs(
+    subtitle = get_test_label(res.fried,  detailed = TRUE),
+    caption = get_pwc_label(pwc)
+  )
+```
+
+Вывод: Как показал непараметрический тест Фридмана (X2(2) = 18.2, p = 0.00011), средняя длина предложения статистически значимо отличается в повторных измерениях в разных возрастах. Тест Уилкоксона для попарного сравнения между группами выявил статистически значимую разницу между группами `preschool` и `secondgrade` (p = 0.002), но не между группой `firstgrade` и двумя остальными группами (p = 0.735 при сравнении с `preschool` и p = 0.292 при сравнении с `secondgrade`). 
+
+
+### Двухфакторная ANOVA с повторными измерениями  
+
+На полном датасете `bilingual`, включающем использование обоих языков (`school` и `home.only`), примените двухфакторный дисперсионный анализ с повторными измерениями, чтобы изучить эффект языка и возраста на среднюю длину высказывания. Перед этим приведите описательные статистики и графики.
+
+```{r}
+bilingual <- read_tsv("http://coltekin.net/cagri/R/data/bilingual.txt") %>% 
+  mutate_if(is.character, factor) %>%
+  mutate(age = factor(age, levels = c("preschool","firstgrade","secondgrade")))
+summary(bilingual)
+
+# get random rows of the data by groups
+bilingual %>% sample_n_by(language, age, size = 1)
+
+# descriptive statistics
+bilingual %>%
+  group_by(language, age) %>%
+  get_summary_stats(mlu, type = "mean_sd")
+
+# boxplots
+ggboxplot(bilingual, x = "age", y = "mlu",
+  color = "language", palette = "jco")
+
+# check extreme outliers
+bilingual %>%
+  group_by(language, age) %>%
+  identify_outliers(mlu)
+
+# check normality assumptions
+bilingual %>%
+  group_by(language, age) %>%
+  shapiro_test(mlu)
+
+ggqqplot(bilingual, "mlu", ggtheme = theme_bw()) +
+  facet_grid(age ~ language, labeller = "label_both")
+
+# anova
+res.aov <- anova_test(
+  data = bilingual, dv = mlu, wid = subj,
+  within = c(language, age)
+  )
+get_anova_table(res.aov)
+
+# Interaction plot
+with(bilingual, interaction.plot(age, language, mlu, lwd = 2, col = 1:2))
+# or
+library(ggsci) # for scientific palettes
+bilingual %>% 
+  ggplot() +
+  aes(x = age, color = language, group = language, y = mlu) +
+  stat_summary(fun = mean, geom = "point") +
+  stat_summary(fun = mean, geom = "line") +
+  scale_color_lancet() +
+  theme_minimal()
+# or
+bilingual_stat <- bilingual %>% 
+  group_by(language, age) %>% 
+  summarise(mlu_groups = mean(mlu),
+            mlu_se = (sd(mlu)/sqrt(length(mlu))))
+bilingual_stat %>% 
+  ggplot() +
+  aes(x = age, y = mlu_groups, color = language) +
+  geom_line(aes(group = language)) +
+  geom_point() +
+  geom_linerange(aes(x = age, ymin = mlu_groups - mlu_se, ymax = mlu_groups + mlu_se), size = .3) +
+  scale_color_lancet() +
+  theme_minimal()
+
+# post-hoc in case of non-significant interactions
+bilingual %>%
+  pairwise_t_test(
+    mlu ~ language, paired = TRUE, 
+    p.adjust.method = "bonferroni"
+    )
+bilingual %>%
+  pairwise_t_test(
+    mlu ~ age, paired = TRUE, 
+    p.adjust.method = "bonferroni"
+    )
+
+# box plots with p-values
+pwc <- pwc %>% add_xy_position(x = "age")
+ggboxplot(bilingual, x = "age", y = "mlu",
+  color = "language", palette = "jco") + 
+  stat_pvalue_manual(pwc, tip.length = 0, hide.ns = TRUE) +
+  labs(
+    subtitle = get_test_label(res.aov, detailed = TRUE),
+    caption = get_pwc_label(pwc)
+  )
+```
+
+Значимое взаимодействие двух факторов (language:age) означало бы, что вклад одного из факторов (например, возраста) разный в зависимости от уровня другого фактора (language).
+Код для post-hoc тестов при статистически значимом взаимодействии:
+
+```{r}
+# Effect of language on mlu in each age
+one.way <- bilingual %>%
+  group_by(age) %>%
+  anova_test(dv = mlu, wid = subj, within = language) %>%
+  get_anova_table() %>%
+  adjust_pvalue(method = "bonferroni")
+one.way
+
+# Pairwise comparisons between language groups
+pwc <- bilingual %>%
+  group_by(age) %>%
+  pairwise_t_test(
+    mlu ~ language, paired = TRUE,
+    p.adjust.method = "bonferroni"
+    )
+pwc
+# аналогично для language на каждом уровне age и затем попарное сравнение между условиями age.
+```
+
+
+### MISC
+
+Стандартная ошибка на графике:
+
+```{r barplot with errorbars}
+bilingual <- read_tsv("http://coltekin.net/cagri/R/data/bilingual.txt") %>% 
+  mutate_if(is.character, factor) %>%
+  mutate(age = factor(age, levels = c("preschool","firstgrade","secondgrade")),
+         subj = factor(subj))
+bilingual_stat <- bilingual %>% 
+  group_by(age, language) %>% 
+  summarise(mlu_groups = mean(mlu),
+            mlu_se = (sd(mlu)/sqrt(length(mlu))))
+
+bilingual_stat %>% 
+  ggplot(aes(x = age, y = mlu_groups, fill = language)) +
+  geom_bar(stat="identity", color="black", 
+           position=position_dodge()) +
+  geom_errorbar(aes(ymin = mlu_groups - mlu_se, 
+                    ymax = mlu_groups + mlu_se), width=.2, position=position_dodge(.9)) +
+  theme_minimal() +
+  scale_fill_manual(values=c('#8ECAE6','#219EBC'))
+```
+
+Код для слайдов: one-way anova
+
+```{r code for slides}
+anovadata_wide <- tibble(young = c(3,2,1,1,4,2,4,3), 
+                    adult = c(10,9,9,8,7,8,6,7), 
+                    senior = c(7,6,7,6,5,4,3,6))
+
+anovadata <- anovadata_wide %>%
+  pivot_longer(cols = young:senior, names_to = "age", values_to = "RT") 
+
+ggplot(anovadata, aes(x=age, y=RT)) +
+         geom_boxplot() +
+         theme_minimal()
+
+anovadata %>%
+  group_by(by=age)
+
+car::leveneTest(anovadata$RT ~ anovadata$age) 
+# p-value of F close to 1 means that data are homogeneous
+
+model1 <- aov(anovadata$RT ~ anovadata$age) 
+summary(model1)
+#Anova(model1, type=3)
+# age has a significant effect
+
+# post-hoc analysis: pairwise comparison
+TukeyHSD(model1)  
+# means in all three group are significantly different from each other
+plot(TukeyHSD(model1))  
+
+pairwise.t.test(anovadata$RT, anovadata$age)
+pairwise.t.test(anovadata$RT, anovadata$age, p.adjust.method = "bonf")
+```
+
+Код для слайдов: RM-anova
+
+```{r code for slides RM-anova}
+depression <- tibble(id = c(1:5),
+                    autumn = c(7,6,6,5,6), 
+                    winter = c(6,7,3,3,6), 
+                    spring = c(5,5,6,1,3)) %>%
+  pivot_longer(cols = autumn:spring, names_to = "season", values_to = "grade") 
+
+ggplot(depression, aes(x=season, y=grade)) +
+         geom_point() +
+         theme_minimal()
+
+depression %>%
+  group_by(season) %>%
+  get_summary_stats(grade, type = "mean_sd")
+
+ggboxplot(depression, x = "season", y = "grade", add = "point")
+
+# extreme outliers
+depression %>%
+  group_by(season) %>%
+  identify_outliers(grade)
+# 1) remove extreme outliers, 2) compare models with and without outliers, 3) perform robust ANOVA test using the WRS2 package
+
+# normality test
+depression %>%
+  group_by(season) %>%
+  shapiro_test(grade)
+# data normally distributed in each seasons, p>0.5
+
+ggqqplot(depression, "grade", facet.by = "season")
+
+res.aov <- anova_test(data = depression, dv = grade, wid = id, within = season)
+get_anova_table(res.aov)
+# p-value > 0.5, so there is no significant difference found across seasons 
+
+# post-hoc analysis: pairwise comparison
+pwc <- depression %>%
+  pairwise_t_test(
+    grade ~ season, paired = TRUE,
+    p.adjust.method = "bonferroni"
+    )
+pwc
+
+# Visualization: box plots with p-values
+pwc <- pwc %>% add_xy_position(x = "season")
+ggboxplot(depression, x = "season", y = "grade", add = "point") + 
+  stat_pvalue_manual(pwc) +
+  labs(
+    subtitle = get_test_label(res.aov, detailed = TRUE),
+    caption = get_pwc_label(pwc)
+  )
+```
+
+Взаимодействие (interaction) переменных:
+
+```{r}
+grades <- tibble(learners = c("HL", "HL", "L2", "L2"),
+                 time = c("weak1", "weak20", "weak1", "weak20"), 
+                 spelling.score = c(60,20,40,80)) 
+
+points <- tribble(
+  ~Point, ~Y, ~X,
+  "point 1", 50, 1,
+  "point 2", 50, 2,
+  "point 3", NA, NA,
+  "point 4", 60, 1.5,
+  "point 5", 40, 1.5
+)
+
+grades %>% 
+  ggplot() +
+  aes(x = time, y = spelling.score, color = learners) +
+  geom_line(aes(group = learners)) +
+  geom_point() +
+  ylim(0,100) +
+  geom_point(data=points, aes(x = X, y = Y), color="lightgrey", shape=8) +
+  geom_path(data=points, aes(x = X, y = Y), color="lightgrey", linetype=2) +
+  scale_color_lancet() +
+  theme_bw() +
+  theme(legend.position=c(0.16,0.55)) 
+```
+
+Шпаргалка по ANOVA:
+* https://www.krigolsonteaching.com/uploads/4/3/8/4/43848243/r_coding_cheat_sheet.pdf  
+
+О величине эффекта, η2 и partial η2:
+* https://www.toposbooks.gr/behavioralstats/Levine_Hullett_2002.pdf  

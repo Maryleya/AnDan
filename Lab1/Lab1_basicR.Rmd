@@ -1,0 +1,181 @@
+### R как калькулятор
+
+```{r}
+# посчитать разность 21 и 10:
+21-10
+# присвоить значение переменной result1:
+result1 <- 21-10
+# вывести значение переменной:
+result1
+
+# узнать тип переменной:
+class(result1)
+sqrt(2)^2 == 2
+```
+
+### Работа с номинальными (категориальными) переменными
+
+```{r}
+result2 <- "Hello"
+class(result2)
+result3 <- "world"
+result4 <- paste(result2, result3, sep = ", ")
+result4
+?paste
+paste0(result2, result3)
+```
+
+### Векторы 
+
+```{r}
+# присвоить значение вектора чисел от 1 до 10:
+result5 <- c(1:10)
+result5
+class(result5)
+```
+
+Операции с векторами:
+
+```{r}
+# извлечь элементы с 4-го по 7-ой (получим тоже вектор)
+result5[4:7]
+mean(result5) - mean(result5[1:3])
+rm(result5)
+#result5
+```
+
+```{r}
+# извлечь элементы вектора по условию: 
+newvector <- c(3, 55, 24, 1, 56, 2, 45)
+newvector[newvector > 5 & newvector < 50]
+```
+
+Булевы векторы:
+
+```{r}
+newvector2 <- c(1:14)
+newvector == newvector2
+```
+
+Обратите внимание на длину итогового вектора:
+```{r}
+length(newvector)
+length(newvector2)
+```
+
+## Упражнение
+
+Создайте вектор `n_countries`, состоящий из следующих значений:
+58, 27, 23, 20, 9, 6, 5, 5, 4, 4, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
+
+```{r}
+# YOUR CODE HERE
+n_countries <- c(58, 27, 23, 20, 9, 6, 5, 5, 4, 4, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
+n_countries == c(58,27,23,20,9,6,5,5,4,4,rep(3,5),rep(2,20))
+```
+
+Используйте функцию `barplot`, чтобы изобразить столбиковую диаграмму со значениями данного вектора.  
+
+```{r barplot1}
+barplot(n_countries,
+        col = "skyblue",
+        border = "darkblue",
+        ylim = c(0, 60))  
+```
+
+Что изображает наша диаграмма? 
+
+Давайте добавим в нее в качестве подписей вектор languagelist со следующими номинальными значениями:
+"English", "French", "Arabic", "Spanish", "Portuguese", "German", "Russian", "Swahili", "Italian", "Malay", "Dutch", "Persian", "Sotho", "Tswana", "Tamil", "Albanian", "Chinese", "Romanian", "Somali", "Turkish", "Aymara", "Berber", "Chichewa", "Greek", "Guarani", "Hindustani", "Quechua", "Korean", "Kurdish", "Rwanda-Rundi", "Swati", "Swedish", "Tigrinya", "Venda", "Bengali"
+
+```{r}
+# YOUR CODE HERE
+languagelist <- c("English", "French", "Arabic", "Spanish", "Portuguese", "German", "Russian", "Swahili", "Italian", "Malay", "Dutch", "Persian", "Sotho", "Tswana", "Tamil", "Albanian", "Chinese", "Romanian", "Somali", "Turkish", "Aymara", "Berber", "Chichewa", "Greek", "Guarani", "Hindustani", "Quechua", "Korean", "Kurdish", "Rwanda-Rundi", "Swati", "Swedish", "Tigrinya", "Venda", "Bengali")
+```
+
+Подписи к столбцам добавляет аргумент `names.arg=`.  
+Поменяйте цвет столбиков с помощью аргумента `col=...`.
+
+```{r}
+# YOUR CODE HERE
+barplot(n_countries, 
+        col = "skyblue",
+        border = "darkblue",
+        names.arg = languagelist)
+```
+
+Ну а теперь добавим аргументы:
+* `horiz=TRUE` -- для поворота диаграммы на 90%  
+* `las=1` -- для поворота названий языков 
+* `xlab="..."` -- для подписи оси X  
+* `main="..."` -- для названия всего графика
+
+```{r}
+# YOUR CODE HERE
+barplot(n_countries, 
+        col = "skyblue",
+        border = "darkblue",
+        names.arg=languagelist,
+        horiz=T, las=1,
+        xlab="Number of countries",
+        main="Покрытие стран по языкам")
+```
+И еще немного красоты. Укажем масштаб подписей:
+
+```{r barplot4}
+barplot(rev(n_countries), 
+        col = "skyblue",
+        border = "darkblue",
+        names.arg=rev(languagelist),
+        horiz=T, las=1,
+        cex.main = 0.55, cex.sub = 0.45, cex.lab = 0.75, cex.names = 0.4,
+        xlab="Number of countries",
+        main="How many countries share a language?",
+        sub = "Source: Wikipedia, 2025")
+```
+
+Догадайтесь, что делает функция `rev()`?
+
+С помощью функции `hist()` постройте гистограмму:
+
+```{r}
+# YOUR CODE HERE
+hist(n_countries,
+     breaks = 27)
+```
+
+Добавьте к построенной гистограмме цвет столбиков и подписи.   
+
+```{r}
+hist(n_countries,
+     main = "How many countries share a language?",
+     xlab = "Number of countries",
+     ylab = "Frequency",
+     col = "lightblue",
+     border = "darkblue",
+     breaks = 27,
+     xlim = c(0, 60),
+     ylim = c(0, 20))
+```
+
+## Датафреймы
+
+```{r}
+head(cars)
+str(cars)
+dim(cars)
+cars[1:3,]
+cars$speed[5:46]
+cars[cars$speed >= 4,][cars$dist <= 20,]
+```
+
+```{r packages}
+#install.packages("datasets")
+#library(datasets)
+```
+
+### Примечание  
+
+Этот документ написан в стиле R Markdown. Обратите внимание, как оформлен текст и как в него включены блоки кода на языке R. 
+
+

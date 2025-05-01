@@ -1,0 +1,137 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE}
+library(tidyverse)
+```
+
+## Описательная статистика
+
+**Популяция** и **выборки**
+- соответственно, параметры и статистики 
+
+* mean()
+* какие еще статистики характеризуют разного рода лингвистические данные?
+
+## Распределения в R
+
+* `d...` (функция плотности, probability density function),
+* `p...` (функция распределения, cumulative distribution function) --- интеграл площади под кривой от начала до указанной квантили
+* `q...` (обратная функции распределения, inverse cumulative distribution function) --- значение *p*-той квантили распределения
+* и `r...` (рандомные числа из заданного распределения).
+
+```{r}
+vec <- seq(-5, 5, 0.1)
+head(vec, 20)
+plot(vec,dnorm(vec))
+plot(vec,pnorm(vec))
+pnorm(80, mean=120, sd=15)
+```
+Теперь с помощью ggplot2, изменим среднее и стандартное отклонение. 
+
+```{r}
+p <- tibble(x = 1:100,
+       PDF = dnorm(x = x, mean = 20, sd = 5)) %>% 
+  ggplot(aes(x, PDF))+
+  geom_point()+
+  geom_line()+
+  labs(title = "График нормального распределения (μ = 50, sd = 5)")
+p
+```
+```{r}
+tibble(x = 1:100,
+       CDF = pnorm(x, mean = 50, sd = 10)) %>% 
+  ggplot(aes(x, CDF))+
+  geom_point()+
+  geom_line()+
+  labs(title = "CDF нормального распределения (μ = 50, sd = 10)")
+tibble(quantiles = seq(0, 1, by = 0.01),
+       value = qnorm(quantiles, mean = 50, sd = 10)) %>% 
+  ggplot(aes(quantiles, value))+
+  geom_point()+
+  geom_line()+
+  labs(title = "inverse CDF нормального распределения (μ = 50, sd = 10)")
+tibble(sample = rnorm(100000, mean = 50, sd = 10)) %>% 
+  ggplot(aes(sample))+
+  geom_histogram()+
+  labs(title = "выборка нормально распределенных чисел (μ = 50, sd = 10)")
+```
+
+```{r}
+set.seed(42)
+```
+
+### Логнормальное распределение
+
+$$P(x) = \frac{1}{\sqrt{x\sigma2\pi}}\times e^{-\frac{\left(\ln(x)-\mu\right)^2}{2\sigma^2}}$$
+
+$$\mu \in \mathbb{R}; \sigma^2 > 0$$
+
+```{r}
+tibble(x = 1:100,
+       PDF = dlnorm(x = x, mean = 0.01, sd = 0.9)) %>% 
+  ggplot(aes(x, PDF))+
+  geom_point()+
+  geom_line()+
+  labs(title = "График логнормального распределения (μ = 3, σ = 0.5)")
+```
+Возьмем датасет vowels (Hillenbrand et al. 1995) и посмотрим на длительность гласных американского английского.
+
+```{r}
+vowels <- read_csv("https://raw.githubusercontent.com/agricolamz/2021_da4l/master/data/phonTools_hillenbrand_1995.csv") 
+summary(vowels)
+vowels %>% 
+  ggplot(aes(dur)) + 
+  geom_histogram(aes(y = after_stat(density))) + # обратите внимание на аргумент after_stat(density)
+  stat_function(fun = dnorm, args = list(mean = 274.673, sd = 64.482), color = "red")
+```  
+
+```{r, include=FALSE, eval=FALSE}
+# install.packages("infitdistrplus")
+library(infitdistrplus) # the package works only for R version ≥ 3.5
+vowels %>% 
+  summarise(est = fitdistrplus::fitdist(dur, distr = 'lnorm', method = 'mle')$estimate) %>% 
+  pull() %>% 
+  round(3)->
+  est_ml_sdl
+```
+
+Какая из логнормальных моделей для длительности гласных американского английского из [@hillenbrand95] лучше подходит к данным?
+
+```{r, echo = FALSE}
+vowels %>% 
+  ggplot(aes(dur)) + 
+  geom_histogram(aes(y =after_stat(density)), fill = "black") + 
+  stat_function(fun = dlnorm, args = list(mean = 5.587, sd = 0.242), color = "red")+
+  stat_function(fun = dlnorm, args = list(mean = 5.687, sd = 0.342), color = "darkgreen")+
+  stat_function(fun = dlnorm, args = list(mean = 5.487, sd = 0.262), color = "navy")+
+  labs(subtitle = "синяя: ln μ = 5.487, ln σ = 0.262\nкрасная: ln μ = 5.687, ln σ = 0.342\nзеленая: ln μ = 5.587, ln σ = 0.242\n",
+       x = "длительность гласного (мс)",
+       y = "значение функции плотности")
+
+studentnames <- as_tibble(c(5,7,7,5,5,7,4,6,5,9,7))
+studentnames1 <- as_tibble(c(5,7,7,4,4,4,3,6,4,5,4))
+studentnames1 %>%
+  ggplot(aes(value)) +
+  geom_histogram()  
+
+studenttime <- as_tibble(c(5,2,2.5,2.5,2,4,3,3,1,2,2.75))
+studenttime %>%
+  ggplot(aes(value)) +
+  geom_histogram(fill='green') +
+  theme_classic()
+
+```
+```{r}
+mean(vowels$dur)
+mean(vowels$dur, trim=0.1)
+mean(vowels$dur, trim=0.5)
+studentnames <- as_tibble(c(5,7,7,5,5,7,4,6,5,9,7))
+studentnames %>%
+   count(value, sort=T)
+```
+
+## Reference
+
+* [ЦПТ](https://ru.wikipedia.org/wiki/%D0%A6%D0%B5%D0%BD%D1%82%D1%80%D0%B0%D0%BB%D1%8C%D0%BD%D0%B0%D1%8F_%D0%BF%D1%80%D0%B5%D0%B4%D0%B5%D0%BB%D1%8C%D0%BD%D0%B0%D1%8F_%D1%82%D0%B5%D0%BE%D1%80%D0%B5%D0%BC%D0%B0): классическая центральная предельная теорема утверждает, что сумма n независимых одинаково распределённых случайных величин имеет распределение, близкое к (N(n\mu ,n\sigma ^{2}). Или,  {\bar {X}}_{n}} имеет распределение близкое к N(\mu ,\sigma ^{2}/n).

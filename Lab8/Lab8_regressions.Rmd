@@ -1,0 +1,814 @@
+---
+title: "Lab8_regressions"
+output: html_document
+date: "2023-02-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Регрессии для непрерывных зависимых переменных  
+
+### Регрессия 
+
+Регрессия - метод предсказания (объяснения) одной переменной через другие. 
+
+$$y_i = \hat\beta_0 + \hat\beta_1 \times x_i + \epsilon_i,$$
+* независимые переменные (предикторы, effect) 
+* зависимая переменная (outcome) 
+
+В отличие от корреляции, проверяющей связь между двумя переменными, но не направление зависимости, регрессия явно эксплицирует это направление. 
+
+```{r, message=FALSE}
+library(tidyverse)
+library(lme4)
+library(lmerTest) # for the model summary
+library(skimr) # just for summaries
+```
+
+```{r, warning=FALSE}
+set.seed(42)
+data <- tibble(x = rnorm(150)+1) %>% 
+  mutate(y = 5*x+10+rnorm(100, sd = 2))
+mean_y <- mean(data$y)
+
+data %>%
+  ggplot(aes(x, y)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 0, linetype = 2) +
+  geom_hline(yintercept = 15.314, color = "blue") +
+  annotate(geom = "point", x = 0, y = 15.314, size = 4, color = "red") +
+  scale_x_continuous(breaks = -2:4) +
+  scale_y_continuous(breaks = c(0:3*10, 15)) +
+  theme_minimal()
+```
+
+```{r, warning=FALSE}
+tibble(x = rnorm(150)+1) %>% 
+  mutate(y = 5*x+10+rnorm(100, sd = 2)) %>% 
+  ggplot(aes(x, y)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 0, linetype = 2) +
+  geom_smooth(method = "lm", se = FALSE) +
+  annotate(geom = "point", x = 0, y = 10, size = 4, color = "red") +
+  annotate(geom = "label", x = -0.5, y = 12, size = 5, color = "red", label = "intercept") +
+  annotate(geom = "label", x = 2, y = 12.5, size = 5, color = "red", label = "slope") +
+  scale_x_continuous(breaks = -2:4) +
+  scale_y_continuous(breaks = c(0:3*10, 15)) +
+  theme_minimal()
+pBrackets::grid.brackets(815, 420, 815, 545, lwd=2, col="red")
+```
+Когда мы пытаемся научиться предсказывать данные одной переменной $Y$ при помощи другой переменной $X$, мы получаем формулу:
+
+$$y_i = \hat\beta_0 + \hat\beta_1 \times x_i + \epsilon_i,$$
+где
+
+* $x_i$ --- $i$-ый элемент вектора значений $X$;
+* $y_i$ --- $i$-ый элемент вектора значений $Y$;
+* $\hat\beta_0$ --- оценка случайного члена (intercept);
+* $\hat\beta_1$ --- оценка углового коэффициента (slope);
+* $\epsilon_i$ --- $i$-ый остаток, разница между оценкой модели ($\hat\beta_0 + \hat\beta_1 \times x_i$) и реальным значением $y_i$; весь вектор остатков иногда называют случайным шумом (на графике выделены красным).
+
+Причем, иногда мы можем один или другой параметр считать равным нулю.
+
+```{block, type = "rmdtask"}
+Определите по графику формулу синей прямой.
+```
+
+```{r, message=FALSE, echo = FALSE, warning=FALSE}
+set.seed(42)
+tibble(x = rnorm(30, mean = 50, sd = 10), 
+       y = x + rnorm(30, sd = 10)) %>% 
+  mutate(x = x - mean(x)+ 50,
+         y = y - mean(y)+ 55) ->
+  df
+coef <- round(coef(lm(y~x, data = df)), 3)
+df %>% 
+  ggplot(aes(x, y))+
+  geom_point(size = 2)+
+  geom_smooth(se = FALSE, method = "lm")+
+  annotate(geom = "label", x = 35, y =70, size = 5,
+           label = latex2exp::TeX(str_c("$y_i$ = ", coef[1], " + ", coef[2], "$\\times x_i + \\epsilon_i$")))+
+  geom_segment(aes(xend = x, yend = predict(lm(y~x, data = df))), color = "red", linetype = 2)
+```
+
+Задача регрессии --- оценить параметры $\hat\beta_0$ и $\hat\beta_1$, если нам известны все значения $x_i$ и $y_i$ и мы пытаемся минимизировать значния $\epsilon_i$. В данном конкретном случае, задачу можно решить аналитически и получить следующие формулы:
+
+$$\hat\beta_1 = \frac{(\sum_{i=1}^n x_i\times y_i)-n\times\bar x \times \bar y}{\sum_{i = 1}^n(x_i-\bar x)^2}$$
+
+$$\hat\beta_0 = \bar y - \hat\beta_1\times\bar x$$
+
+При этом, вне зависимости от статистической школы, у регрессии есть свои ограничения на применение:
+
+* линейность связи между $x$ и $y$;
+* нормальность распределение остатков $\epsilon_i$;
+* гомоскедастичность --- равномерность распределения остатков на всем протяжении $x$;
+* независимость переменных;
+* независимость наблюдений друг от друга.
+
+### Первая регрессия
+
+количество слов *и* в рассказах М. Зощенко в зависимости от длины рассказа:
+```{r, message=FALSE}
+zo <- read_tsv("https://github.com/agricolamz/DS_for_DH/raw/master/data/tidy_zoshenko.csv")
+zo %>% 
+  filter(word == "и") %>% 
+  distinct() %>% 
+  ggplot(aes(n_words, n))+
+  geom_point()+
+  labs(x = "количество слов в рассказе",
+       y = "количество и")
+```
+
+Избавимся от выбросов и добавим регрессионную линию при помощи функции `geom_smooth()`:
+
+```{r, message=FALSE}
+zo %>% 
+  filter(word == "и",
+         n_words < 1500) %>% 
+  distinct() ->
+  zo_filtered
+zo_filtered %>%   
+  ggplot(aes(n_words, n))+
+  geom_point()+
+  geom_smooth(method = "lm", se = FALSE)+
+  labs(x = "количество слов в рассказе",
+       y = "количество и")
+```
+
+Чтобы получить формулу этой линии, нужно запустить функцию, которая оценивает линейную регрессию:
+
+```{r}
+fit0 <- lm(n ~ n_words, data = zo)
+fit0
+fit <- lm(n~n_words, data = zo_filtered)
+fit
+```
+$$n_{fit0} = 1.259006 + 0.006204 \times n\_words$$
+
+
+$$n = -1.47184 + 0.04405 \times n\_words$$
+
+Более подробная информация - в функции `summary()`:
+
+```{r}
+summary(fit0)
+summary(fit)
+```
+
+В разделе `Coefficients` содержится информация о наших коэффициентах: 
+
+* `Estimate` -- полученная оценка коэффициентов;
+* `Std. Error` -- стандартная ошибка среднего;
+* `t value` -- $t$-статистика, полученная при проведении одновыборочного $t$-теста, сравнивающего данный коэфициент с 0;
+* `Pr(>|t|)` -- полученное $p$-значение;
+* `Multiple R-squared` и	`Adjusted R-squared` --- одна из оценок модели, показывает связь между переменными. Без поправок совпадает с квадратом коэффициента корреляции Пирсона:
+
+```{r}
+cor(zo_filtered$n_words, zo_filtered$n)^2
+```
+
+* `F-statistic` --- $F$-статистика полученная при проведении теста, проверяющего, не являются ли хотя бы один из коэффицинтов статистически значимо отличается от нуля. Совпадает с результатами дисперсионного анализа (ANOVA).
+
+
+## Предсказание модели (predict)
+
+Сколько будет "и" в рассказе Зощенко длиной 1000 слов? 
+(на самом деле, такого рассказа нет. Это предсказание)
+
+```{r, echo = FALSE, message=FALSE}
+pr <- predict(fit, tibble(n_words = 1000))
+zo_filtered %>%   
+  ggplot(aes(n_words, n))+
+  geom_point()+
+  geom_smooth(method = "lm", se = FALSE)+
+  labs(x = "количество слов в рассказе М. Зощенко",
+       y = "количество и")+
+  annotate(geom = "segment", x = 1000, xend = 1000, y = -Inf, yend = pr, 
+           linetype = 2, color = "red")+
+  annotate(geom = "segment", x = 1000, xend = 0, y = pr, yend = pr, 
+           linetype = 2, color = "red", arrow = arrow(type = "closed", length = unit(0.2, "inches")))+
+  scale_y_continuous(breaks = round(c(1:3*20, unname(pr)), 2))
+```
+
+```{r}
+predict(fit, tibble(n_words = 1000))
+```
+
+## Допущения линейной регрессии
+
+### Нормальность распределения остатков
+
+Линейная регрессия предполагает нормальность распределения остатков. Когда связь не линейна, то остатки тоже будут распределены не нормально.
+
+Можно смотреть на первый график используя функцию `plot()` --- график остатков. 
+```{r}
+plot(fit)
+```
+
+Интерпретаций этого графика достаточно много (см. [статью про это](https://www.qualtrics.com/support/stats-iq/analyses/regression-guides/interpreting-residual-plots-improve-regression/)).
+* Residuals vs Fitted: тренд в стандартизованных остатках (красная линия) должен идти примерно вдоль пунктирной линии y=0 (нормальность распределения остатков).  
+* QQplot  
+* Scale-location plot: показывает гомоскидастичность остатков (постоянство распределения) - красная линия должна идти примерно горизонтально.  
+* Residuals vs. Leverage: показывает точки наблюдения, наиболее сильно влияющие на коэффициенты модели. Если какая-либо точка вываливается за границы красных пунктирных линий (Cook’s distance), то ее влияние чрезмерно.  
+
+Можно смотреть на QQplot:
+
+```{r, eval=FALSE}
+tibble(res = m1$residuals) %>% 
+  ggplot(aes(res))+
+  geom_histogram(aes(y = ..density..))+
+  stat_function(fun = dnorm, args = list(mean = 0, sd = sd(m1$residuals)), color = "red")
+qqnorm(m1$residuals)
+qqline(m1$residuals)
+tibble(res = m2$residuals) %>% 
+  ggplot(aes(res))+
+  geom_histogram(aes(y = ..density..))+
+  stat_function(fun = dnorm, args = list(mean = 0, sd = sd(m2$residuals)), color = "red")
+qqnorm(m2$residuals)
+qqline(m2$residuals)
+tibble(res = m3$residuals) %>% 
+  ggplot(aes(res))+
+  geom_histogram(aes(y = ..density..))+
+  stat_function(fun = dnorm, args = list(mean = 0, sd = sd(m3$residuals)), color = "red")
+qqnorm(m3$residuals)
+qqline(m3$residuals)
+```
+
+### Гетероскидастичность
+
+Распределение остатков непостоянно (т.е. не гомоскидастично): остатки становятся больше с ростом значений предиктора (или наоборот).
+
+```{r eval=FALSE}
+ldt %>% 
+  ggplot(aes(Mean_RT, Freq))+
+  geom_point()+
+  theme_bw()
+```
+
+Тоже решается преобразованием данных.
+
+### Мультиколлинеарность
+
+Линейная связь между некоторыми предикторами в модели.
+
+* корреляционная матрица
+* VIF (Variance inflation factor), `car::vif()`
+  * VIF = 1 (Not correlated)
+  * 1 < VIF < 5 (Moderately correlated)
+  * VIF >=5 (Highly correlated) # иногда VIF >=3 или VIF >=10
+
+### Независимость наблюдений
+Наблюдения должны быть независимы. В ином случае нужно использовать модель со смешанными эффектами.
+
+
+## Линейная модель с категориальными переменными-предикторами
+
+$$y_i = \hat\beta_0 + \hat\beta_1 \times \text{dummy_chekhov} + \epsilon_i,$$
+$$y_i = \hat\beta_0 + \hat\beta_1 \times 1 + \epsilon_i,$$
+
+dummy_chekhov = 1, если это рассказ Чехова
+dummy_chekhov = 0, если это рассказ Зощенко (дефолтный)
+
+$$
+mean(y_z) = \hat\beta_0
+$$
+
+$$
+mean(y_{ch})
+$$
+
+
+
+Давайте рассмотрим простой пример с [рассказами Чехова](https://github.com/agricolamz/DS_for_DH/raw/master/data/tidy_chekhov.tsv) и [Зощенко](https://github.com/agricolamz/DS_for_DH/raw/master/data/tidy_zoshenko.csv), которые мы рассматривали в прошлом разделе. Мы будем анализировать логарифм доли слов _деньги_ в текстах:
+
+```{r, message=FALSE}
+chekhov <- read_tsv("https://github.com/agricolamz/DS_for_DH/raw/master/data/tidy_chekhov.tsv")
+zoshenko <- read_tsv("https://github.com/agricolamz/DS_for_DH/raw/master/data/tidy_zoshenko.csv")
+chekhov$author <- "Чехов"
+zoshenko$author <- "Зощенко"
+chekhov_zoshenko <-
+  chekhov %>% 
+  bind_rows(zoshenko) %>% 
+  filter(str_detect(word, "деньг")) %>% 
+  group_by(author, titles, n_words) %>% 
+  summarise(n = sum(n)) %>% 
+  mutate(log_ratio = log(n/n_words)) %>%
+  ungroup()
+```
+
+Визуализация выглядит так:
+```{r}
+chekhov_zoshenko %>% 
+  group_by(author) %>% 
+  mutate(mean = mean(log_ratio)) %>% 
+  ggplot(aes(author, log_ratio))+
+  geom_violin()+
+  geom_hline(aes(yintercept = mean), linetype = 3)+
+  geom_point(aes(y = mean), color = "red", size = 5)+
+  scale_y_continuous(breaks = c(-7, -5, -3, -6.34))
+```
+
+Красной точкой обозначены средние значения, так что мы видим, что между двумя писателями есть разница, но является ли она статистически значимой? В прошлом разделе мы рассмотрели, что в таком случае можно сделать t-test:
+
+```{r}
+t.test(log_ratio~author, 
+       data = chekhov_zoshenko, 
+       var.equal =TRUE) # поправка Уэлча отключена
+```
+
+Разница между группами является статистически значимой (t(125) = 5.6871, p-value = 8.665e-08).
+
+Для того, чтобы запустить регрессию на категориальных данных категориальная переменная автоматически разбивается на группу бинарных dummy-переменных:
+
+```{r}
+tibble(author = c("Чехов", "Зощенко"),
+       dummy_chekhov = c(1, 0),
+       dummy_zoshenko = c(0, 1))
+```
+
+Дальше для регрессионного анализа выкидывают одну из переменных, так как иначе модель не сойдется (dummy-переменных всегда n-1, где n --- количество категорий в переменной). 
+
+```{r}
+tibble(author = c("Чехов", "Зощенко"),
+       dummy_chekhov = c(1, 0))
+```
+
+Если переменная `dummy_chekhov` принимает значение 1, значит речь о рассказе Чехова, а если принимает значение 0, то о рассказе Зощенко. Если вставить нашу переменную в регрессионную формулу получится следующее:
+
+$$y_i = \hat\beta_0 + \hat\beta_1 \times \text{dummy_chekhov} + \epsilon_i,$$
+
+Так как  `dummy_chekhov` принимает либо значение 1, либо значение 0, то получается, что модель предсказывает лишь два значения:
+
+$$y_i = \left\{\begin{array}{ll}\hat\beta_0 + \hat\beta_1 \times 1 + \epsilon_i = \hat\beta_0 + \hat\beta_1 + \epsilon_i\text{, если рассказ Чехова}\\ 
+\hat\beta_0 + \hat\beta_1 \times 0 + \epsilon_i = \hat\beta_0 + \epsilon_i\text{, если рассказ Зощенко}
+\end{array}\right.$$
+
+Таким образом, получается, что свободный член $\beta_0$ и угловой коэффициент $\beta_1$ в регрессии с категориальной переменной получает другую интерпретацию. Одно из значений переменной кодируется при помощи $\beta_0$, а сумма коэффициентов $\beta_0+\beta_1$ дают другое значение переменной. Так что $\beta_1$ -- это разница между оценками двух значений переменной.
+
+Запустим регрессию на этих же данных:
+
+```{r}
+fit2 <- lm(log_ratio~author, data = chekhov_zoshenko)
+summary(fit2)
+```
+
+Во-первых, стоит обратить внимание на то, что R сам преобразовал нашу категориальную переменную в dummy-переменную `authorЧехов`. Во-вторых, можно заметить, что значения t-статистики и p-value совпадают с результатами полученными нами в t-тесте выше. Статистически значимый коэффициент при аргументе `authorЧехов` следует интерпретировать как разницу средних между логарифмом долей в рассказах Чехова и Зощенко.
+
+Дамми-кодирование с более чем двумя уровнями: 
+$$
+y_i = \hat\beta_0 + \hat\beta_1 \times \text{dummy_chekhov} + \hat\beta_2 \times \text{dummy_tolstoy} + \epsilon_i,
+$$
+                  Зощенко Чехова Толстой  
+dummy_zoschenko      1      0     0  
+dummy_chekhov        0      1     0  
+dummy_tolstoy        0      0     1  
+
+1 категориальный предиктор (author):  
+Multiple R-squared:  0.2056,	Adjusted R-squared:  0.1992   
+
+1 категориальный (author) + 1 непрерывный предиктор (n_word):  
+Multiple R-squared:  0.4276,	Adjusted R-squared:  0.4184   
+
+```{r}
+fit3 <- lm(log_ratio ~ author + n_words, data = chekhov_zoshenko)
+summary(fit3)
+```
+
+Метрика мультиколлинеарности предикторов
+```{r}
+car::vif(fit3)
+#VIF: 1 / 1-R2
+```
+
+$$R^2 = 1 − Unexplained\_Variation / Total\_Variation$$
+Примечание: В случае, если один из предикторов - непрерывный, а другой - категориальный (фактор), проверяем количество уровней в факторе. Если уровней всего два, как в данном случае, то `vif()` интерпретируется обычным образом. Если уровне более двух, то выдаются метрики GVIF and aGSIF (generalized VIF). aGSIF > 1.6 говорит о средней инфляции, aGSIF > 2.2 или aGSIF > 3.2 свидетельствует о большой инфляции.  
+
+## Вывод модели
+
+```{r}
+# which components are in lm?
+names(fit3)
+```
+
+Коэффициенты модели:
+```{r}
+fit3$coefficients
+summary(fit3)$coefficients
+```
+Предсказанные значения зависимой переменной:
+```{r}
+head(fit3$fitted.values)
+```
+
+Ошибки модели (остатки, unexplained residuals):
+```{r}
+head(fit3$residuals)
+```
+
+Сумма предсказанных значений и ошибок дает значение зависимой переменной:
+```{r}
+chekhov_zoshenko %>%
+  select(log_ratio) %>%
+  mutate(fit3.predicted = fit3$fitted.values,
+         fit3.residuals = fit3$residuals,
+         `predicted+residuals` = fit3$fitted.values + fit3$residuals) %>%
+  head()
+```
+
+Дисперсия значений зависимой переменной делится на объясненную моделью и необъясненную. Полная дисперсия (total sum of squares, TSS) может быть подсчитана как сумма квадратов разниц со средним. 
+
+```{r}
+tss <- sum((chekhov_zoshenko$log_ratio-mean(chekhov_zoshenko$log_ratio))^2)
+```
+
+Необъясненная дисперсия - сумма квадратов ошибок:
+```{r}
+rss <- sum(fit3$residuals^2)
+```
+
+Посчитаем $R^2$ -- долю объясненной дисперсии:
+```{r}
+1 - rss/tss
+#summary(fit3)$r.squared
+```
+
+Модель объясняет 43% дисперсии - много это или мало?  
+
+Сравним R2 в моделях fit3 и fit2:  
+
+```{r}
+summary(fit2)$r.squared
+```
+
+## Сравнение моделей
+
+Функция aov() может использоваться для представления выдачи модели в формате выдачи дисперсионного анализа.
+```{r}
+aov(fit3)
+summary(aov(fit3))
+```
+
+Хорошая модель должна обладать свойством парсимонией -- не только хорошо обобщать данные, но быть настолько сложной, насколько это необходимо (т. е. не иметь больше предикторов, чем это минимально необходимо). Более сложная модель должна доказать, что она значимо лучше объясняет дисперсию. Если это не так, стоит использовать более простую модель.
+
+```{r}
+anova(fit2,fit3)
+```
+p-value показывает статистическую значимость добавления новых предикторов. 
+Степень свободы (Df) 1 говорит о том, что две модели различаются на одну переменную. 
+
+
+### Множественная регрессия
+
+$$y_i = \hat\beta_0 + \hat\beta_1 \times x_{1i}+ \dots+ \hat\beta_n \times x_{ni} + \epsilon_i,$$
+
+* $x_{ki}$ --- $i$-ый элемент векторов значений $X_1, \dots, X_n$;
+* $y_i$ --- $i$-ый элемент вектора значений $Y$;
+* $\hat\beta_0$ --- оценка случайного члена (intercept);
+* $\hat\beta_k$ --- коэфциент при переменной $X_{k}$;
+* $\epsilon_i$ --- $i$-ый остаток, разница между оценкой модели ($\hat\beta_0 + \hat\beta_1 \times x_i$) и реальным значением $y_i$; весь вектор остатков иногда называют случайным шумом.
+
+В такой регресии предикторы могут быть как числовыми, так и категориальными (со всеми вытекающими последствиями, которые мы обсудили в предудщем разделе). Такую регрессию чаще всего сложно визуализировать, так как в одну регрессионную линию вкладываются сразу несколько переменных.
+
+Попробуем предсказать длину лепестка на основе длины чашелистик и вида ириса:
+
+```{r}
+iris %>% 
+  ggplot(aes(Sepal.Length, Petal.Length, color = Species))+
+  geom_point()
+```
+
+Запустим регрессию:
+
+```{r}
+fit3 <- lm(Petal.Length ~ Sepal.Length+ Species, data = iris)
+summary(fit3)
+```
+
+Все предикторы статистически значимы. Давайте посмотрим предсказания модели для всех наблюдений:
+
+```{r}
+iris %>% 
+  mutate(prediction = predict(fit3)) %>% 
+  ggplot(aes(Sepal.Length, prediction, color = Species))+
+  geom_point()
+```
+
+Всегда имеет смысл визуализировать, что нам говорит наша модель. Если использовать пакет `ggeffects` (или предшествовавший ему пакет `effects`), это можно сделать не сильно задумываясь, как это делать:
+
+```{r, message = FALSE}
+library(ggeffects)
+plot(ggpredict(fit3, terms = c("Sepal.Length", "Species")))
+```
+
+Как видно из графиков, наша модель имеет одинаковые угловые коэффициенты (slope) для каждого из видов ириса и разные свободные члены (intercept).
+
+```{r}
+summary(fit3)
+```
+
+$$y_i = \left\{\begin{array}{ll} -1.70234 + 0.63211 \times \text{Sepal.Length} + \epsilon_i\text{, если вид setosa}\\ 
+-1.70234 + 2.2101 + 0.63211 \times \text{Sepal.Length} + \epsilon_i\text{, если вид versicolor} \\
+-1.70234 + 3.09 + 0.63211 \times \text{Sepal.Length} + \epsilon_i\text{, если вид virginica}
+\end{array}\right.$$
+
+## Нелинейность взаимосвязи
+
+Давайте восползуемся данными из пакета [`Rling` Натальи Левшиной](https://benjamins.com/sites/z.195/content/package.html). В датасете 100 произвольно выбранных слов из проекта English Lexicon Project (Balota et al. 2007), их длина, среднее время реакции и частота в корпусе.
+
+```{r, message=FALSE, warning=FALSE}
+ldt <- read_csv("https://goo.gl/ToxfU6")
+ldt
+```
+
+Давайте посмотрим на простой график:
+
+```{r}
+ldt %>% 
+  ggplot(aes(Mean_RT, Freq))+
+  geom_point()+
+  theme_bw()
+```
+
+Регрессия на таких данных будет супер неиформативна:
+
+```{r}
+ldt %>% 
+  ggplot(aes(Mean_RT, Freq))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  theme_bw()
+m1 <- summary(lm(Mean_RT~Freq, data = ldt))
+m1
+```
+
+### Логарифмирование
+
+```{r}
+ldt %>% 
+  ggplot(aes(Mean_RT, log(Freq)))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  theme_bw()
+ldt %>% 
+  ggplot(aes(Mean_RT, log(Freq+1)))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  theme_bw()
+m2 <- summary(lm(Mean_RT~log(Freq+1), data = ldt))
+m2
+m1$adj.r.squared
+m2$adj.r.squared
+```
+
+Отлогорифмировать можно и другую переменную.
+```{r}
+ldt %>% 
+  ggplot(aes(log(Mean_RT), log(Freq  + 1)))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  theme_bw()
+m3 <- summary(lm(log(Mean_RT)~log(Freq+1), data = ldt))
+m1$adj.r.squared
+m2$adj.r.squared
+m3$adj.r.squared
+```
+
+Как интерпретировать полученную регрессию с двумя отлогорифмированными значениями?
+
+В обычной линейной регресии мы узнаем отношения между $x$ и  $y$:
+$$y_i = \beta_0+\beta_1\times x_i$$
+
+Как изменится $y_j$, если мы увеличем $x_i + 1 = x_j$?
+$$y_j = \beta_0+\beta_1\times x_j$$
+
+$$y_j - y_i = \beta_0+\beta_1\times x_j - (\beta_0+\beta_1\times x_i)  = \beta_1(x_j - x_i)$$
+
+Т. е. $y$ увеличится на $\beta_1$ , если $x$ увеличится на 1. Что же будет с логарифмированными переменными? Как изменится $y_j$, если мы увеличем $x_i + 1 = x_j$?
+
+$$\log(y_j) - \log(y_i) = \beta_1\times (\log(x_j) - \log(x_i))$$
+
+$$\log\left(\frac{y_j}{y_i}\right) = \beta_1\times \log\left(\frac{x_j}{x_i}\right) = \log\left(\left(\frac{x_j}{x_i}\right) ^ {\beta_1}\right)$$
+
+$$\frac{y_j}{y_i}= \left(\frac{x_j}{x_i}\right) ^ {\beta_1}$$
+
+Т. е. $y$ увеличится на $\beta_1$ процентов, если $x$ увеличится на 1 процент.
+
+Логарифмирование --- не единственный вид траснформации:
+
+* трансформация Тьюки
+```{r, eval = FALSE}
+install.packages("shiny")
+library(shiny)
+shiny::runGitHub("agricolamz/tukey_transform")
+```
+
+```{r, echo= FALSE}
+data.frame(cors = c(sapply(seq(-5, -0.01, 0.01), function(i){
+  abs(cor(ldt$Mean_RT, -(ldt$Freq+1)^i))
+}),
+abs(cor(ldt$Mean_RT, log(ldt$Freq+1))),
+sapply(seq(0.01, 5, 0.01), function(i){
+  abs(cor(ldt$Mean_RT, (ldt$Freq+1)^i))
+})),
+bandwidth = seq(-5, 5, 0.01)) %>%
+  ggplot(aes(bandwidth, cors))+
+  geom_line()+
+  theme_bw()+
+  geom_vline(xintercept = 0.1, linetype = 2)+
+  labs(y = "correlation",
+       title = "average reaction time ~ Tukey transformed word frequencies")
+```
+
+* трансформация Бокса — Кокса  
+* ...  
+
+### Упражнение  
+
+В [датасет](https://raw.githubusercontent.com/agricolamz/2021_da4l/master/data/freq_dict_2009.csv) собрана частотность разных лемм на основании корпуса НКРЯ [Ляшевская, Шаров 2009]. Известно, что частотность слова связана с рангом слова (см. закон Ципфа). Постройте переменную ранга и визуализируйте связь ранга и логорифма частотности с разбивкой по частям речи. Какие части речи так и не приобрели после трансформации "приемлемую" линейную форму?
+
+```{r, include=FALSE}
+df <- read_tsv("https://raw.githubusercontent.com/olesar/2023dav4compling/main/data/freq_rnc_ranked.csv")
+summary(df)
+df %>%
+  group_by(PoS) %>% 
+#  mutate(id = 1:n()) %>% 
+  ggplot(aes(log(Rank), log(`Freq(ipm)`)))+
+  geom_point()+
+  facet_wrap(~PoS, scale = "free")
+```
+
+#### Полезности 
+
+* Common statistical tests are linear models [link](https://lindeloev.github.io/tests-as-linear/): t-test, ANOVA, correlation explained as lm.  
+
+
+#### В качестве напоминания  
+
+* Дисперсия -- мера разброса значений наблюдений относительно среднего. 
+
+$$\sigma^2_X = \frac{\sum_{i = 1}^n(x_i - \bar{x})^2}{n - 1},$$
+
+где
+
+* $x_1, ..., x_n$ --- наблюдения;
+* $\bar{x}$ --- среднее всех наблюдений;
+* $X$ --- вектор всех наблюдений;
+* $n$ --- количество наблюдений.
+
+Представим, что у нас есть следующие данные:
+
+```{r, echo=T, fig.height=2}
+set.seed(42)
+df <- tibble(x = sort(rnorm(20, mean = 50, sd = 10)), 
+             y = seq_along(x))
+df %>% 
+  ggplot(aes(x)) +
+  geom_point(y = 0) +
+  ggrepel::geom_text_repel(aes(label = y), y = 0) +
+  labs(x = "значение наблюдений x")
+```
+
+Дисперсия - сумма квадратов расстояний от каждой точки до среднего выборки (пунктирная линия) разделенное на n-1.
+
+```{r, echo = FALSE}
+df %>% 
+  mutate(positive_negative = x > mean(x)) %>% 
+  ggplot(aes(x, y))+
+  geom_vline(aes(xintercept = mean(x)), linetype = 2)+
+  geom_linerange(aes(xmin = x, 
+                     xmax = mean(x), 
+                     color = positive_negative),
+                 show.legend = FALSE) + 
+  annotate(geom = "text", x = 56, y = 1, label = "среднее x")+
+  geom_point()+
+  scale_y_continuous(breaks = df$y)+
+  labs(y = "номер наблюдений x",
+       x = "значение наблюдений x")
+```
+
+Распределения могут иметь одинаковое среднее, но разную дисперсию:
+
+```{r, echo=FALSE, message=FALSE}
+set.seed(42)
+map_dfr(1:5*5, function(x){
+  tibble(x = rnorm(20, mean = 50, sd = sqrt(x)),
+         var = round(var(x)))
+}) %>% 
+  group_by(var) %>% 
+  mutate(x = x - mean(x)+50) %>% 
+  ggplot(aes(x, factor(var)))+
+  geom_point()+
+  ggridges::geom_density_ridges(alpha = 0.2)+
+  geom_vline(aes(xintercept = mean(x)), linetype = 2)+
+  labs(x = "значение наблюдений",
+       y = "дисперсия наблюдений")
+```
+```{r}
+x <- rnorm(20, mean = 50, sd = 10)
+var(x)
+sd(x) # sqrt(var(x))
+```
+
+* Ковариация и корреляция - меры ассоциации двух переменных.
+
+$$cov(X, Y) = \frac{\sum_{i = 1}^n(x_i - \bar{x})(y_i-\bar{y})}{n - 1},$$
+$$\rho_{X,Y} = \frac{cov(X, Y)}{\sigma_X\times\sigma_Y} = \frac{1}{n-1}\times\sum_{i = 1}^n\left(\frac{x_i-\bar{x}}{\sigma_X}\times\frac{y_i-\bar{y}}{\sigma_Y}\right),$$
+
+для коэффициента корреляции Пирсона, где  
+
+* $(x_1, y_1), ..., (x_n, y_n)$ --- пары наблюдений;
+* $\bar{x}, \bar{y}$ --- средние наблюдений;
+* $X, Y$ --- векторы всех наблюдений;
+* $n$ --- количество наблюдений.
+
+Для таких данных:
+
+```{r, echo=FALSE}
+tibble(x = rnorm(30, mean = 50, sd = 10), 
+       y = x + rnorm(30, sd = 10)) %>% 
+  mutate(x = x - mean(x)+ 50,
+         y = y - mean(y)+ 55) ->
+  df
+df %>% 
+  ggplot(aes(x, y))+
+  geom_point()
+```
+
+Ковариацию можно представить графически следующим образом:
+
+```{r, echo = FALSE}
+df %>% 
+  ggplot(aes(x, y))+
+  geom_hline(aes(yintercept = mean(y)), linetype = 2)+
+  geom_vline(aes(xintercept = mean(x)), linetype = 2)+
+  geom_rect(aes(ymin = mean(y), ymax = y[which.max(x)], 
+                xmin = mean(x), xmax = max(x)), 
+            fill = "red", alpha = 0.01, show.legend = FALSE)+
+  geom_text(aes(x = mean(x)+4), y = 26, label = "среднее x", alpha = 0.05)+
+  geom_text(aes(y = mean(y)+2), x = 25, label = "среднее y", alpha = 0.05)+
+  geom_point()
+```
+
+Положительная ковариация - много красных квадратов, отрицательня ковариация - много синих.
+
+```{r, echo=FALSE}
+df %>% 
+  mutate(fill_color = (x > mean(x) & y > mean(y)) | (!x > mean(x) & !y > mean(y)),
+         fill_color = !fill_color) %>% 
+  ggplot(aes(x, y))+
+  geom_rect(aes(xmin = mean(x), xmax = x, 
+                ymin = mean(y), ymax = y, fill = fill_color, color = fill_color),
+            alpha = 0.1, show.legend = FALSE)+
+  geom_hline(aes(yintercept = mean(y)), linetype = 2)+
+  geom_vline(aes(xintercept = mean(x)), linetype = 2)+
+  geom_text(aes(x = mean(x)+4), y = 26, label = "среднее x", alpha = 0.05)+
+  geom_text(aes(y = mean(y)+2), x = 25, label = "среднее y", alpha = 0.05)+
+  geom_point()
+```
+
+Коэффициент корреляции Пирсона можно представить как среднее произведение $z$-нормализованных значений двух переменных.
+
+```{r, echo=FALSE}
+df %>% 
+  mutate_all(scale) %>% 
+  mutate(fill_color = (x > mean(x) & y > mean(y)) | (!x > mean(x) & !y > mean(y)),
+         fill_color = !fill_color) %>% 
+  ggplot(aes(x, y))+
+  geom_rect(aes(xmin = mean(x), xmax = x, 
+                ymin = mean(y), ymax = y, fill = fill_color, color = fill_color),
+            alpha = 0.1, show.legend = FALSE)+
+  geom_hline(aes(yintercept = mean(y)), linetype = 2)+
+  geom_vline(aes(xintercept = mean(x)), linetype = 2)+
+  geom_text(aes(x = mean(x)+0.8), y = -2, label = "нормализованное среднее x", alpha = 0.05)+
+  geom_text(aes(y = mean(y)+0.1), x = -1.6, label = "нормализованное среднее y", alpha = 0.05)+
+  geom_point()
+```
+
+Что можно сказать про корреляцию в следующих данных: 
+
+```{r, message = FALSE, warning=FALSE, echo = FALSE}
+set.seed(42)
+map_dfr(c(-0.5, -0.75, -0.95, 0.5, 0.75, 0.95), function(i){
+  MASS::mvrnorm(n=100, 
+                mu=rep(50,2), 
+                Sigma=matrix(i, nrow=2, ncol=2) + diag(2)*(1-i)) %>% 
+    as_tibble() %>% 
+    mutate(id = i) %>% 
+    rename(x = V1,
+           y = V2)}) %>% 
+  group_by(id) %>% 
+  mutate(cor = round(cor(x, y), 3)) %>%
+  ggplot(aes(x, y))+
+  geom_smooth(method = "lm", se = FALSE, color = "gray80")+
+  geom_point()+
+  facet_wrap(~cor, nrow = 2, scales = "free")+
+  labs(x = "", y = "")
+```
+
+В открытом доступе можно найти игры "Угадай корреляцию" [здесь](http://guessthecorrelation.com/) или [здесь](https://cheng-dsdp.shinyapps.io/CorApp/).
+
+

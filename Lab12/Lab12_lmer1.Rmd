@@ -1,0 +1,254 @@
+---
+title: "Lab9_mixed-effect models"
+output:
+  html_document: default
+  pdf_document: default
+date: "2024-03-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Линейная модель со смешанными эффектами
+
+Презентация М. Варфоломеевой, В. Хайтова (2022), Смешанные линейные модели - случайный интерсепт и случайный угол наклона [pdf](https://varmara.github.io/linmodr/15.1_GLMM_gaussian_random_intercept_slope.pdf)
+
+В качестве примера мы попробуем поиграть с [законом Хердана-Хипса](https://en.wikipedia.org/wiki/Heaps%27_law), описывающий взаимосвязь количества уникальных слов в тексте в зависимости от длины текста. В датасете собраны некоторые корпуса Universal Dependencies [@ud20] и некоторые числа, посчитанные на их основании:
+
+```{r, message=FALSE}
+library(tidyverse)
+ud <- read_csv("https://raw.githubusercontent.com/agricolamz/2021_da4l/master/data/ud_corpora.csv")
+ud %>% 
+  ggplot(aes(n_words, n_tokens))+
+  geom_point()+
+  facet_wrap(~corpus, scale = "free")+
+  geom_smooth(method = "lm", se = FALSE)+
+  labs(x = "количество слов", 
+       y = "количество уникальных слов",
+       caption = "данные корпусов Universal Dependencies")
+```
+
+Связь между переменными безусловно линейная, однако в разных корпусах представлена разная перспектива: для каких-то корпусов, видимо, тексты специально нарезались, так что тексты таких корпусов содержат от 30-40 до 50-80 слов, а какие-то оставались не тронутыми. Чтобы показать, что связь есть, нельзя просто "слить" все наблюдения в один котел (см. [парадокс Симпсона](https://en.wikipedia.org/wiki/Simpson%27s_paradox)), так как это нарушит предположение регрессии о независимости наблюдений. Мы не можем включить переменную `corpus` в качестве dummy-переменной: тогда один из корпусов попадет в интерсепт (станет своего рода базовым уровенем), а остальные будут от него отсчитываться. К тому же не очень понятно, как работать с новыми данными из других корпусов: ведь мы хотим предсказывать значения обобщенно, вне зависимости от корпуса.
+
+При моделировании при помощи моделей со случайными эффектами различают:
+
+* *основные эффекты* -- это те связи, которые нас интересуют, независимые переменные (количество слов, количество уникальных слов);
+* *случайные эффекты* -- это те переменные, которые создают группировку в данных (корпус).
+
+В результате моделирования появляется обобщенная модель, которая игнорирует группировку, а потом для каждого значения случайного эффекта генерируется своя регрессия, отсчитывая от обобщенной модели как от базового уровня.
+
+Рассмотрим простейший случай:
+
+```{r, message = FALSE}
+library(lme4)
+library(lmerTest)
+fit0 <- lm(n_tokens~n_words, data = ud)
+summary(fit0)
+fit1 <- lmer(n_tokens~n_words+(1|corpus), data = ud)
+summary(fit1)
+ud %>% 
+  mutate(predicted = predict(fit1)) %>% 
+  ggplot(aes(n_words, n_tokens))+
+  geom_point()+
+  facet_wrap(~corpus, scale = "free")+
+  geom_line(aes(y = predicted), color = "red") +
+  labs(x = "количество слов", 
+       y = "количество уникальных слов",
+       caption = "данные корпусов Universal Dependencies")
+```
+
+Можно посмотреть на предсказания модели (основные эффекты):
+
+```{r}
+library(ggeffects)
+ggeffect(fit1) %>% 
+  plot()
+```
+
+```{block, type = "rmdtask"}
+Визуализируйте полученные модели при помощи функции `plot()`. Какие ограничения на применение линейной регрессии нарушается в наших моделях?
+```
+
+```{r}
+plot(fit1)
+```
+
+В данном случае мы предполагаем, что случайный эффект имеет случайный свободный член. Т.е. все получающиеся линии параллельны, так как имеют общий угловой коэффициент. Можно допустить большую свободу и сделать так, чтобы в случайном эффекте были не только интерсепт, но и свободный член:
+
+```{r}
+fit2 <- lmer(n_tokens~n_words+(1+n_words|corpus), data = ud)
+summary(fit2)
+ud %>% 
+  mutate(predicted = predict(fit2)) %>% 
+  ggplot(aes(n_words, n_tokens))+
+  geom_point()+
+  facet_wrap(~corpus, scale = "free")+
+  geom_line(aes(y = predicted), color = "red") +
+  labs(x = "количество слов", 
+       y = "количество уникальных слов",
+       caption = "данные корпусов Universal Dependencies")
+```
+
+
+Можно посмотреть на предсказания модели (основные эффекты):
+
+```{r}
+ggeffect(fit2) %>% 
+  plot()
+```
+
+Нарушения все те же:
+
+```{r}
+plot(fit2)
+```
+
+При желании мы можем также построить модель, в которой в случайном эффекте будет лишь угловой коэффициент, а свободный член будет фиксированным:
+
+```{r}
+fit3 <- lmer(n_tokens~n_words+(0+n_words|corpus), data = ud)
+summary(fit3)
+ud %>% 
+  mutate(predicted = predict(fit3)) %>% 
+  ggplot(aes(n_words, n_tokens))+
+  geom_point()+
+  facet_wrap(~corpus, scale = "free")+
+  geom_line(aes(y = predicted), color = "red") +
+  labs(x = "количество слов", 
+       y = "количество уникальных слов",
+       caption = "данные корпусов Universal Dependencies")
+```
+
+Линии получились очень похожими, но разными:
+
+![](images/lmer.gif)
+
+Можно посмотреть на предсказания модели (основные эффекты):
+
+```{r}
+ggeffect(fit3) %>% 
+  plot()
+```
+
+Нарушения все те же:
+
+```{r}
+plot(fit3)
+```
+
+Сравним полученные модели:
+```{r}
+anova(fit3, fit2, fit1)
+```
+
+```{block, type = "rmdtask"}
+Постройте модель со случайными угловым коэффициентом и свободным членом, устранив проблему, которую вы заметили в прошлом задании.
+```
+
+
+```{r, include = FALSE}
+ud %>% 
+  filter(corpus != "UD_Arabic-PADT") ->
+  ud2
+fit4 <- lmer(n_tokens~n_words+(n_words|corpus), data = ud2)
+summary(fit4)
+ud2 %>% 
+  mutate(predicted = predict(fit4)) %>% 
+  ggplot(aes(n_words, n_tokens))+
+  geom_point()+
+  facet_wrap(~corpus, scale = "free")+
+  geom_line(aes(y = predicted), color = "red") +
+  labs(x = "количество слов", 
+       y = "количество уникальных слов",
+       caption = "данные корпусов Universal Dependencies")
+```
+
+```{block, type = "rmdtask"}
+Пользуясь знаниями из предыдущих заданий, смоделируйте связь количества слов и количества существительных. С какими проблемами вы столкнулись?
+```
+
+```{r, include = FALSE, error=TRUE}
+ud %>% 
+  filter(corpus != "UD_Arabic-PADT") ->
+  ud2
+fit5 <- lmer(n_tokens~n_nouns+(n_nouns|corpus), data = ud2)
+summary(fit4)
+ud2 %>% 
+  mutate(predicted = predict(fit4)) %>% 
+  ggplot(aes(n_words, n_tokens))+
+  geom_point()+
+  facet_wrap(~corpus, scale = "free")+
+  geom_line(aes(y = predicted), color = "red") +
+  labs(x = "количество слов", 
+       y = "количество уникальных слов",
+       caption = "данные корпусов Universal Dependencies")
+```
+```{r}
+library(sjPlot)
+plot_model(fit2)
+```
+
+
+```{r}
+data <- read.csv("https://raw.githubusercontent.com/olesar/2023dav4compling/main/data/icelandic.csv")
+data
+```
+```{r}
+avg_vowel_dur <- data %>%
+  group_by(place) %>%
+  summarise(mean_vowel_dur = mean(vowel.dur, na.rm = TRUE))
+avg_vowel_dur
+```
+
+```{r}
+avg_vowel_dur <- data %>%
+  group_by(speaker) %>%
+  summarise(mean_vowel_dur = mean(vowel.dur, na.rm = TRUE))
+avg_vowel_dur
+```
+
+```{r}
+avg_vowel_dur <- data %>%
+  group_by(place, speaker) %>%
+  summarise(mean_vowel_dur = mean(vowel.dur, na.rm = TRUE))
+avg_vowel_dur
+```
+
+```{r}
+ggplot(data, aes(x = place, y = vowel.dur, color = speaker)) +
+  geom_boxplot() +
+  labs(x = "place",
+       y = "vowel.dur") +
+  theme_minimal()
+```
+
+```{r}
+avg_vowel_dur_word <- data %>%
+  group_by(word) %>%
+  summarise(mean_vowel_dur = mean(vowel.dur, na.rm = TRUE))
+avg_vowel_dur_word
+```
+
+```{r}
+ggplot(data, aes(x = word, y = vowel.dur, fill=word)) +
+  geom_boxplot() +
+  labs(x = "word",
+       y = "vowel.dur") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), legend.key.size = unit(0.5, "cm"))
+```
+
+```{r}
+model <- lmer(vowel.dur ~ place + (1 | speaker), data = data)
+summary(model)
+```
+
+```{r}
+plot(model)
+```
+
+```{r}
+qqnorm(resid(model))
+qqline(resid(model))
+```
